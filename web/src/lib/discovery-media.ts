@@ -178,26 +178,30 @@ function isSearchEngineUrl(url: string): boolean {
  * first for TikTok, with yt-dlp kept as a second attempt.
  */
 async function extractTikTokVideoViaApiDl(sourceUrl: string): Promise<string | null> {
+  const { Downloader } = await import("@tobyg74/tiktok-api-dl");
+
+  // Each version attempted in its own try/catch — this package sometimes
+  // throws deep inside its own response parsing (e.g. reading a property off
+  // an undefined object when TikTok returns a blocked/malformed response)
+  // rather than resolving a clean error status, so one bad attempt must not
+  // stop us from still trying the other version.
   try {
-    const { Downloader } = await import("@tobyg74/tiktok-api-dl");
-
     const v3 = await Downloader(sourceUrl, { version: "v3" });
-    if (v3.status === "success") {
-      const url = v3.result?.videoHD || v3.result?.videoSD;
-      if (url) return url;
-    }
-
-    const v1 = await Downloader(sourceUrl, { version: "v1" });
-    if (v1.status === "success") {
-      const url = v1.result?.video?.downloadAddr?.[0] || v1.result?.video?.playAddr?.[0];
-      if (url) return url;
-    }
-
-    return null;
+    const url = v3?.status === "success" ? v3.result?.videoHD || v3.result?.videoSD : null;
+    if (url) return url;
   } catch (error) {
-    console.warn(`[discovery-media] tiktok-api-dl extraction failed for ${sourceUrl}: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
+    console.warn(`[discovery-media] tiktok-api-dl v3 extraction failed for ${sourceUrl}: ${error instanceof Error ? error.message : String(error)}`);
   }
+
+  try {
+    const v1 = await Downloader(sourceUrl, { version: "v1" });
+    const url = v1?.status === "success" ? v1.result?.video?.downloadAddr?.[0] || v1.result?.video?.playAddr?.[0] : null;
+    if (url) return url;
+  } catch (error) {
+    console.warn(`[discovery-media] tiktok-api-dl v1 extraction failed for ${sourceUrl}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+
+  return null;
 }
 
 /**

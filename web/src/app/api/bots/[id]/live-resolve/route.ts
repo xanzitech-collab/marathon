@@ -30,7 +30,13 @@ export async function POST(request: Request, { params }: Params) {
     const tags: string[] = Array.isArray(body.tags) && body.tags.length > 0 ? body.tags : ["fan_engagement", "live"];
     if (!sourceUrl) return NextResponse.json({ error: "url is required" }, { status: 400 });
 
-    const resolvedUrl = await extractMediaFromUrl(sourceUrl);
+    let resolvedUrl: string | null;
+    try {
+      resolvedUrl = await extractMediaFromUrl(sourceUrl);
+    } catch (error) {
+      console.error("[live-resolve] extractMediaFromUrl crashed:", error);
+      resolvedUrl = null;
+    }
     if (!resolvedUrl) {
       return NextResponse.json(
         { error: "Could not extract a real downloadable video from this link (source may be blocked, removed, or login-walled)." },
