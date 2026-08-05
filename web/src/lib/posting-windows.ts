@@ -1,4 +1,6 @@
-export async function ensureDefaultPostingWindows(supabase: { from: (table: string) => any }, botId: string) {
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+export async function ensureDefaultPostingWindows(supabase: SupabaseClient, botId: string) {
   const { data: existing, error: listError } = await supabase.from("bot_posting_windows").select("id").eq("bot_id", botId);
 
   if (listError) throw listError;

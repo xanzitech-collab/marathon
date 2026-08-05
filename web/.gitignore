@@ -41,6 +41,9 @@ cookies.txt
 public/memes-content/
 public/music/
 
+# one-off debug/test scripts (created then deleted during troubleshooting)
+tmp-*
+
 # vercel
 .vercel
 

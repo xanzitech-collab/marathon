@@ -1,5 +1,3 @@
-import { ARTIST_CONTEXT } from "@/lib/artist";
-
 export interface MemeVerificationResult {
   accepted: boolean;
   reason: string;

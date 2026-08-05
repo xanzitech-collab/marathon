@@ -13,7 +13,7 @@ export interface RenderedMemeResult {
   reason?: string;
 }
 
-function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, lineHeight: number) {
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
   const words = text.split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = "";
@@ -61,7 +61,7 @@ export async function renderJokeOntoImage(input: MemeRenderInput): Promise<Rende
       ctx.font = `bold ${Math.max(26, Math.round(width / 22 * (isRetry ? 1.25 : 1)))}px sans-serif`;
       ctx.textAlign = "left";
       ctx.textBaseline = "top";
-      const lines = wrapText(ctx, input.jokeText, width - 60, 40).slice(0, 5);
+      const lines = wrapText(ctx, input.jokeText, width - 60).slice(0, 5);
       let y = 24;
       for (const line of lines) {
         ctx.fillText(line, 24, y);
@@ -81,7 +81,7 @@ export async function renderJokeOntoImage(input: MemeRenderInput): Promise<Rende
       ctx.font = `bold ${Math.max(28, Math.round(width / 18 * (isRetry ? 1.25 : 1)))}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const lines = wrapText(ctx, text, width - 60, 40).slice(0, 2);
+      const lines = wrapText(ctx, text, width - 60).slice(0, 2);
       const centerY = barHeight / 2;
       for (const line of lines) {
         ctx.strokeText(line, width / 2, centerY);

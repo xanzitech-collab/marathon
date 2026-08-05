@@ -4,7 +4,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function POST(request: Request) {
   try {
-    const { supabase, user } = await requireUser();
+    const { user } = await requireUser();
     const formData = await request.formData();
     const file = formData.get("file");
     const botId = formData.get("botId");
