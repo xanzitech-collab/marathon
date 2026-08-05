@@ -460,7 +460,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
           </div>
 
           {tab === "voice" && (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid min-w-0 gap-3 md:grid-cols-2">
               <Field label="Channel name">
                 <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" />
               </Field>
@@ -775,7 +775,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="text-sm text-ink">
+    <label className="min-w-0 text-sm text-ink">
       <span className="mb-1 block text-xs text-faded">{label}</span>
       {children}
     </label>
