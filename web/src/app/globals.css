@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+:root {
+  --canvas: #161c23;
+  --surface: #172e45;
+  --surface-raised: color-mix(in srgb, var(--surface) 70%, var(--faded) 30%);
+  --ink: #c3c7ce;
+  --faded: #7990a8;
+  --border: color-mix(in srgb, var(--faded) 30%, var(--surface) 70%);
+  --signal: #1464be;
+  --live: #b6a04d;
+  --alert: #8f6a41;
+}
+
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-faded: var(--faded);
+  --color-signal: var(--signal);
+  --color-live: var(--live);
+  --color-alert: var(--alert);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-data);
+}
+
+body {
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body), sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-display), serif;
+  font-style: italic;
+  letter-spacing: -0.01em;
+}
+
+.font-data {
+  font-family: var(--font-data), monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Tally light — the signature status indicator */
+.tally {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.tally-live { background: var(--live); }
+.tally-signal { background: var(--signal); }
+.tally-alert { background: var(--alert); }
+.tally-off { background: var(--faded); opacity: 0.5; }
+
+
+.input {
+  width: 100%;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--canvas);
+  padding: 0.625rem 0.75rem;
+  font-size: 0.875rem;
+  color: var(--ink);
+  outline: none;
+}
+.input:focus { border-color: color-mix(in srgb, var(--signal) 50%, transparent); }
+.input::placeholder { color: color-mix(in srgb, var(--faded) 60%, transparent); }
+
+.btn-primary {
+  border-radius: 0.5rem;
+  background: var(--signal);
+  color: #ffffff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: filter 0.15s;
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-primary:disabled { opacity: 0.5; filter: grayscale(0.4); cursor: not-allowed; }
+
+.btn-secondary {
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  color: var(--faded);
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-secondary:hover:not(:disabled) { color: var(--ink); border-color: color-mix(in srgb, var(--signal) 40%, transparent); }
+.btn-secondary:disabled { opacity: 0.5; filter: grayscale(0.4); cursor: not-allowed; }
+
+button:not(:disabled) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
