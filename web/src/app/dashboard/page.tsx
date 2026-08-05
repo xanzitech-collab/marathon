@@ -2,9 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Cookie } from "lucide-react";
+import { Cookie, Settings } from "lucide-react";
 import type { BotWithHealth } from "@/types/app";
 import { BotCard } from "@/components/dashboard/BotCard";
+import { ManualUploadModal } from "@/components/dashboard/ManualUploadModal";
 
 export default function DashboardPage() {
   return (
@@ -27,6 +28,22 @@ function DashboardPageInner() {
   const [cookiesError, setCookiesError] = useState<string | null>(null);
   const [cookiesUploadedMessage, setCookiesUploadedMessage] = useState<string | null>(null);
   const cookiesInputRef = useRef<HTMLInputElement | null>(null);
+  const [manualUploadOpen, setManualUploadOpen] = useState(false);
+  const gearClickCountRef = useRef(0);
+  const gearClickTimerRef = useRef<number | null>(null);
+
+  const handleGearClick = () => {
+    gearClickCountRef.current += 1;
+    if (gearClickTimerRef.current) window.clearTimeout(gearClickTimerRef.current);
+    if (gearClickCountRef.current >= 3) {
+      gearClickCountRef.current = 0;
+      setManualUploadOpen(true);
+      return;
+    }
+    gearClickTimerRef.current = window.setTimeout(() => {
+      gearClickCountRef.current = 0;
+    }, 600);
+  };
 
   const fetchBots = async () => {
     const res = await fetch("/api/bots", { cache: "no-store" });
@@ -270,6 +287,18 @@ function DashboardPageInner() {
           )}
         </div>
       </section>
+
+      <footer className="mx-auto flex max-w-5xl justify-end px-6 py-6">
+        <button
+          onClick={handleGearClick}
+          aria-label="Settings"
+          className="rounded-full p-2 text-faded/40 transition hover:text-faded"
+        >
+          <Settings size={14} />
+        </button>
+      </footer>
+
+      {manualUploadOpen && <ManualUploadModal bots={bots} onClose={() => setManualUploadOpen(false)} />}
     </main>
   );
 }

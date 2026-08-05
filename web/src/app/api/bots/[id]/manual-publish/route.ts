@@ -1,0 +1,148 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { publishNextQueuedItem } from "@/lib/publish-service";
+import { markVaultItemPosted } from "@/lib/meme-vault";
+
+const VAULT_BUCKET = process.env.SUPABASE_MEME_VAULT_BUCKET ?? "meme-vault";
+
+interface Params {
+  params: Promise<{ id: string }>;
+}
+
+interface ManualItemInput {
+  vaultItemId: string;
+  caption: string;
+  tags: string[];
+  songId: string | null;
+  noSong: boolean;
+}
+
+export async function POST(request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    const { supabase, user } = await requireUser();
+
+    const { data: bot, error: botError } = await supabase
+      .from("bots")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (botError || !bot) throw new Error("Bot not found");
+
+    const body = await request.json();
+    const rawItems = Array.isArray(body.items) ? (body.items as ManualItemInput[]) : [];
+    if (rawItems.length === 0) {
+      return NextResponse.json({ error: "No items selected" }, { status: 400 });
+    }
+
+    const admin = createAdminClient();
+    const results: Array<{ vaultItemId: string; queued: boolean; published: boolean; error?: string }> = [];
+
+    for (const input of rawItems) {
+      const result: { vaultItemId: string; queued: boolean; published: boolean; error?: string } = {
+        vaultItemId: input.vaultItemId,
+        queued: false,
+        published: false,
+      };
+      results.push(result);
+
+      try {
+        const { data: vaultItem, error: vaultError } = await admin
+          .from("meme_vault_items")
+          .select("*")
+          .eq("id", input.vaultItemId)
+          .single();
+        if (vaultError || !vaultItem) throw new Error("Vault item not found");
+
+        const { data: signed, error: signError } = await admin.storage
+          .from(VAULT_BUCKET)
+          .createSignedUrl(vaultItem.storage_path, 3600);
+        if (signError || !signed?.signedUrl) throw new Error(signError?.message ?? "Could not sign vault media");
+
+        const response = await fetch(signed.signedUrl, { signal: AbortSignal.timeout(60_000) });
+        if (!response.ok) throw new Error(`Vault media download failed (${response.status})`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const ext = vaultItem.media_type === "video" ? "mp4" : (vaultItem.storage_path.split(".").pop() ?? "jpg");
+        const storagePath = `${user.id}/${id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+        const { error: uploadError } = await admin.storage.from("bot-media").upload(storagePath, buffer, {
+          contentType: vaultItem.media_type === "video" ? "video/mp4" : "image/jpeg",
+          upsert: false,
+        });
+        if (uploadError) throw new Error(uploadError.message);
+
+        const { data: signedBotMedia, error: signedBotMediaError } = await admin.storage
+          .from("bot-media")
+          .createSignedUrl(storagePath, 3600);
+        if (signedBotMediaError || !signedBotMedia?.signedUrl) throw new Error(signedBotMediaError?.message ?? "Could not sign uploaded media");
+
+        const tags = input.tags.length > 0 ? input.tags : ["meme", vaultItem.category, vaultItem.source];
+
+        const { data: mediaAsset, error: mediaAssetError } = await admin
+          .from("media_assets")
+          .insert({
+            bot_id: id,
+            storage_path: storagePath,
+            public_url: signedBotMedia.signedUrl,
+            media_type: vaultItem.media_type,
+            media_context_caption: vaultItem.original_filename,
+            tags,
+            is_ready: true,
+            is_used: false,
+            usage_count: 0,
+          })
+          .select("id")
+          .single();
+        if (mediaAssetError || !mediaAsset?.id) throw new Error(mediaAssetError?.message ?? "Could not create media asset");
+
+        const { data: queueRow, error: queueError } = await admin
+          .from("content_queue")
+          .insert({
+            bot_id: id,
+            media_asset_id: mediaAsset.id,
+            status: "queued",
+            surface: vaultItem.media_type === "video" ? "reel" : "feed",
+            generated_caption: input.caption?.trim() || null,
+            metadata: {
+              source: "MemeVault",
+              discovery_title: vaultItem.original_filename,
+              discovery_description: vaultItem.context_text,
+              media_type: vaultItem.media_type,
+              tags,
+              manual_selection: true,
+              manual_song_id: input.noSong ? null : input.songId,
+              manual_no_song: Boolean(input.noSong),
+              vault_item_id: vaultItem.id,
+            },
+          })
+          .select("id")
+          .single();
+        if (queueError || !queueRow?.id) throw new Error(queueError?.message ?? "Could not queue item");
+
+        result.queued = true;
+        await markVaultItemPosted(admin, vaultItem.id);
+
+        const publishResult = await publishNextQueuedItem(admin, bot, { preferredItemId: queueRow.id });
+        result.published = Boolean(publishResult.body.success);
+        if (!publishResult.body.success) {
+          const bodyError = publishResult.body.error;
+          const bodyReason = publishResult.body.reason;
+          result.error =
+            (typeof bodyError === "string" && bodyError) ||
+            (typeof bodyReason === "string" && bodyReason) ||
+            "Publish failed";
+        }
+      } catch (itemError) {
+        result.error = itemError instanceof Error ? itemError.message : "Unknown error";
+      }
+    }
+
+    const publishedCount = results.filter((r) => r.published).length;
+    return NextResponse.json({ results, publishedCount, totalCount: results.length });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
+  }
+}

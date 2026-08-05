@@ -21,7 +21,11 @@ type BotRow = Database["public"]["Tables"]["bots"]["Row"];
  * automation loop so both go through the exact same meme/video/music pipeline.
  * Assumes the caller has already confirmed the bot is eligible to post right now.
  */
-export async function publishNextQueuedItem(supabase: SupabaseClient, bot: BotRow): Promise<PublishApiResult> {
+export async function publishNextQueuedItem(
+  supabase: SupabaseClient,
+  bot: BotRow,
+  options?: { preferredItemId?: string },
+): Promise<PublishApiResult> {
   const id = bot.id;
   const userId = bot.user_id;
 
@@ -114,7 +118,21 @@ export async function publishNextQueuedItem(supabase: SupabaseClient, bot: BotRo
   const nonRepeatedCandidate = eligibleCandidates.find(
     (candidate) => !candidate.media_asset_id || !blockedMediaAssetIds.has(candidate.media_asset_id),
   );
-  const item = nonRepeatedCandidate ?? eligibleCandidates[0] ?? null;
+  // A manual pick (from the meme-vault review-and-publish screen) is a
+  // deliberate human decision — skip the generic oldest-first candidate
+  // selection and its auto-cancel checks entirely, and just publish exactly
+  // the item the caller asked for.
+  let item: Database["public"]["Tables"]["content_queue"]["Row"] | null = nonRepeatedCandidate ?? eligibleCandidates[0] ?? null;
+  if (options?.preferredItemId) {
+    const { data: preferredItem } = await supabase
+      .from("content_queue")
+      .select("*")
+      .eq("id", options.preferredItemId)
+      .eq("bot_id", id)
+      .in("status", ["queued", "ready"])
+      .single();
+    item = (preferredItem as Database["public"]["Tables"]["content_queue"]["Row"] | null) ?? null;
+  }
 
   if (queueError || !item) {
     return createPublishApiError("No queued item available", 404);
@@ -325,7 +343,16 @@ export async function publishNextQueuedItem(supabase: SupabaseClient, bot: BotRo
     }
   }
 
-  const reusableCaption = isMemePost ? null : (typeof item.generated_caption === "string" && item.generated_caption.trim() ? item.generated_caption : null);
+  // A manual pick from the meme-vault review-and-publish screen already has
+  // a human-approved caption — reuse it instead of the meme-path's normal
+  // re-generate-every-time behavior.
+  const isManualSelection = baseMetadata.manual_selection === true;
+  const reusableCaption =
+    !isMemePost || isManualSelection
+      ? typeof item.generated_caption === "string" && item.generated_caption.trim()
+        ? item.generated_caption
+        : null
+      : null;
   const discoveryTitle = typeof baseMetadata.discovery_title === "string" ? baseMetadata.discovery_title : null;
   const discoveryDescription = typeof baseMetadata.discovery_description === "string" ? baseMetadata.discovery_description : null;
   const extractedImageText = typeof baseMetadata.extracted_image_text === "string" ? baseMetadata.extracted_image_text : null;
@@ -386,9 +413,20 @@ export async function publishNextQueuedItem(supabase: SupabaseClient, bot: BotRo
 
   const shouldConsiderMusic = !hasNativeAudioAlready && !isFifthMemeVideoInCycle;
 
-  const selectedSong = shouldConsiderMusic
-    ? await pickSongForBot(supabase, id, bot.content_target, { excludeSongIds: recentSongIds })
-    : null;
+  // A manual pick can name an exact song (or explicitly opt out) instead of
+  // the automatic mood/ratio-based picker.
+  const manualSongId = typeof baseMetadata.manual_song_id === "string" ? baseMetadata.manual_song_id : null;
+  const manualNoSong = baseMetadata.manual_no_song === true;
+
+  let selectedSong: Awaited<ReturnType<typeof pickSongForBot>> = null;
+  if (manualNoSong) {
+    selectedSong = null;
+  } else if (manualSongId) {
+    const { data: manualSong } = await supabase.from("songs").select("*").eq("id", manualSongId).single();
+    selectedSong = manualSong ?? null;
+  } else if (shouldConsiderMusic) {
+    selectedSong = await pickSongForBot(supabase, id, bot.content_target, { excludeSongIds: recentSongIds });
+  }
   const soundtrackLine = selectedSong
     ? `Soundtrack: ${selectedSong.title} - ${selectedSong.artist ?? ARTIST_CONTEXT.name}`
     : null;
