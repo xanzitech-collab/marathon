@@ -113,12 +113,12 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     else setLiveError(result.error || "Couldn't load live content for this platform.");
   };
 
-  useEffect(() => {
-    if (tab === "live" && liveItems.length === 0 && !liveLoading && !liveError) {
+  const openLiveTab = () => {
+    setTab("live");
+    if (liveItems.length === 0 && !liveLoading && !liveError) {
       void loadLivePlatform(platform);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  };
 
   const toggleCategory = async (category: string) => {
     const next = new Set(expanded);
@@ -360,7 +360,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
               Vault
             </button>
             <button
-              onClick={() => setTab("live")}
+              onClick={openLiveTab}
               className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs ${tab === "live" ? "bg-signal text-canvas" : "text-faded"}`}
             >
               <Radio size={12} /> Live
