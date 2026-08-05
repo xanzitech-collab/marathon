@@ -39,9 +39,25 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(60_000) });
-    if (!response.ok) throw new Error(`Media download failed (${response.status})`);
+    if (!response.ok) {
+      return NextResponse.json({ error: `Media download failed (${response.status}). Try another item.` }, { status: 422 });
+    }
+
+    // Guard against an unexpectedly huge file blowing up server memory —
+    // legit clips are well under this; anything bigger is almost certainly
+    // a bad/looping stream response rather than a real short-form video.
+    const MAX_BYTES = 300 * 1024 * 1024;
+    const contentLength = Number(response.headers.get("content-length") ?? 0);
+    if (contentLength > MAX_BYTES) {
+      return NextResponse.json({ error: "This video is too large to process. Try another item." }, { status: 422 });
+    }
+
     const contentType = response.headers.get("content-type") ?? "video/mp4";
-    const buffer = Buffer.from(await response.arrayBuffer());
+    const arrayBuffer = await response.arrayBuffer();
+    if (arrayBuffer.byteLength > MAX_BYTES) {
+      return NextResponse.json({ error: "This video is too large to process. Try another item." }, { status: 422 });
+    }
+    const buffer = Buffer.from(arrayBuffer);
 
     const admin = createAdminClient();
     const ext = contentType.includes("mp4") ? "mp4" : contentType.includes("image") ? "jpg" : "mp4";
@@ -103,6 +119,7 @@ export async function POST(request: Request, { params }: Params) {
       tags,
     });
   } catch (error) {
+    console.error("[live-resolve] failed:", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
   }
 }
