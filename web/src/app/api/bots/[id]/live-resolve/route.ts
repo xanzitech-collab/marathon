@@ -1,0 +1,108 @@
+import { NextResponse } from "next/server";
+import { requireUser } from "@/lib/auth";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { ARTIST_CONTEXT } from "@/lib/artist";
+import { getGeminiKeysForBot } from "@/lib/config";
+import { GeminiClient } from "@/lib/gemini/client";
+import { extractMediaFromUrl } from "@/lib/discovery-media";
+
+interface Params {
+  params: Promise<{ id: string }>;
+}
+
+export async function POST(request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    const { supabase, user } = await requireUser();
+
+    const { data: bot, error: botError } = await supabase
+      .from("bots")
+      .select("*")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+    if (botError || !bot) throw new Error("Bot not found");
+
+    const body = await request.json();
+    const sourceUrl = typeof body.url === "string" ? body.url : null;
+    const title = typeof body.title === "string" ? body.title : "";
+    const description = typeof body.description === "string" ? body.description : title;
+    const tags: string[] = Array.isArray(body.tags) && body.tags.length > 0 ? body.tags : ["fan_engagement", "live"];
+    if (!sourceUrl) return NextResponse.json({ error: "url is required" }, { status: 400 });
+
+    const resolvedUrl = await extractMediaFromUrl(sourceUrl);
+    if (!resolvedUrl) {
+      return NextResponse.json(
+        { error: "Could not extract a real downloadable video from this link (source may be blocked, removed, or login-walled)." },
+        { status: 422 },
+      );
+    }
+
+    const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(60_000) });
+    if (!response.ok) throw new Error(`Media download failed (${response.status})`);
+    const contentType = response.headers.get("content-type") ?? "video/mp4";
+    const buffer = Buffer.from(await response.arrayBuffer());
+
+    const admin = createAdminClient();
+    const ext = contentType.includes("mp4") ? "mp4" : contentType.includes("image") ? "jpg" : "mp4";
+    const mediaType: "image" | "video" = contentType.startsWith("image") ? "image" : "video";
+    const storagePath = `${user.id}/${id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+    const { error: uploadError } = await admin.storage.from("bot-media").upload(storagePath, buffer, {
+      contentType,
+      upsert: false,
+    });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: signedBotMedia, error: signedBotMediaError } = await admin.storage
+      .from("bot-media")
+      .createSignedUrl(storagePath, 3600);
+    if (signedBotMediaError || !signedBotMedia?.signedUrl) throw new Error(signedBotMediaError?.message ?? "Could not sign uploaded media");
+
+    const { data: mediaAsset, error: mediaAssetError } = await admin
+      .from("media_assets")
+      .insert({
+        bot_id: id,
+        storage_path: storagePath,
+        public_url: signedBotMedia.signedUrl,
+        media_type: mediaType,
+        media_context_caption: title || null,
+        tags,
+        is_ready: true,
+        is_used: false,
+        usage_count: 0,
+      })
+      .select("id")
+      .single();
+    if (mediaAssetError || !mediaAsset?.id) throw new Error(mediaAssetError?.message ?? "Could not create media asset");
+
+    const geminiClient = new GeminiClient(getGeminiKeysForBot(bot.api_slot));
+    let caption = "";
+    try {
+      caption = (
+        await geminiClient.generateCaption({
+          artist: ARTIST_CONTEXT.name,
+          songs: ARTIST_CONTEXT.songs,
+          persona: bot.persona,
+          additionalPersona: bot.additional_persona,
+          contentTarget: bot.content_target,
+          location: [bot.city, bot.country].filter(Boolean).join(", "),
+          mediaTags: tags,
+          sourceContext: description || title,
+        })
+      ).trim();
+    } catch {
+      caption = "";
+    }
+
+    return NextResponse.json({
+      mediaAssetId: mediaAsset.id,
+      previewUrl: signedBotMedia.signedUrl,
+      mediaType,
+      caption,
+      tags,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
+  }
+}

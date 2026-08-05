@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { publishNextQueuedItem } from "@/lib/publish-service";
+import { queueAndPublishManualItem } from "@/lib/manual-queue";
 import { markVaultItemPosted } from "@/lib/meme-vault";
 
 const VAULT_BUCKET = process.env.SUPABASE_MEME_VAULT_BUCKET ?? "meme-vault";
@@ -98,43 +98,25 @@ export async function POST(request: Request, { params }: Params) {
           .single();
         if (mediaAssetError || !mediaAsset?.id) throw new Error(mediaAssetError?.message ?? "Could not create media asset");
 
-        const { data: queueRow, error: queueError } = await admin
-          .from("content_queue")
-          .insert({
-            bot_id: id,
-            media_asset_id: mediaAsset.id,
-            status: "queued",
-            surface: vaultItem.media_type === "video" ? "reel" : "feed",
-            generated_caption: input.caption?.trim() || null,
-            metadata: {
-              source: "MemeVault",
-              discovery_title: vaultItem.original_filename,
-              discovery_description: vaultItem.context_text,
-              media_type: vaultItem.media_type,
-              tags,
-              manual_selection: true,
-              manual_song_id: input.noSong ? null : input.songId,
-              manual_no_song: Boolean(input.noSong),
-              vault_item_id: vaultItem.id,
-            },
-          })
-          .select("id")
-          .single();
-        if (queueError || !queueRow?.id) throw new Error(queueError?.message ?? "Could not queue item");
-
         result.queued = true;
         await markVaultItemPosted(admin, vaultItem.id);
 
-        const publishResult = await publishNextQueuedItem(admin, bot, { preferredItemId: queueRow.id });
-        result.published = Boolean(publishResult.body.success);
-        if (!publishResult.body.success) {
-          const bodyError = publishResult.body.error;
-          const bodyReason = publishResult.body.reason;
-          result.error =
-            (typeof bodyError === "string" && bodyError) ||
-            (typeof bodyReason === "string" && bodyReason) ||
-            "Publish failed";
-        }
+        const manualResult = await queueAndPublishManualItem(admin, bot, {
+          botId: id,
+          mediaAssetId: mediaAsset.id,
+          mediaType: vaultItem.media_type,
+          caption: input.caption,
+          tags,
+          songId: input.songId,
+          noSong: input.noSong,
+          source: "MemeVault",
+          discoveryTitle: vaultItem.original_filename,
+          discoveryDescription: vaultItem.context_text,
+          extraMetadata: { vault_item_id: vaultItem.id },
+        });
+        result.queued = manualResult.queued;
+        result.published = manualResult.published;
+        result.error = manualResult.error;
       } catch (itemError) {
         result.error = itemError instanceof Error ? itemError.message : "Unknown error";
       }

@@ -31,7 +31,20 @@ export class ContentDiscoveryService {
   private readonly artistHandle = ARTIST_CONTEXT.instagramHandle;
   private readonly tiktokHandle = ARTIST_CONTEXT.tiktokHandle;
   private readonly facebookHandle = ARTIST_CONTEXT.facebookHandle;
+  private readonly youtubeHandle = ARTIST_CONTEXT.youtubeHandle;
   private readonly songs = ARTIST_CONTEXT.songs;
+
+  /**
+   * Live browse for the manual "Live" tab: lists real candidate videos for
+   * one specific platform on demand, without resolving actual downloadable
+   * media yet (that happens per-item when the user selects one, since
+   * resolution is the slow/failure-prone step — see discovery-media.ts).
+   */
+  async browsePlatform(platform: "tiktok" | "facebook" | "youtube"): Promise<DiscoveryItem[]> {
+    if (platform === "tiktok") return this.crawlTikTokProfile();
+    if (platform === "facebook") return this.crawlFacebookVideos();
+    return this.crawlYouTubeSearch();
+  }
 
   async discoverContent(bot: BotRecord, options?: { limit?: number }): Promise<DiscoveryItem[]> {
     const limit = options?.limit ?? 3;
@@ -422,6 +435,52 @@ export class ContentDiscoveryService {
             mediaType: "video",
             relevanceScore: 90,
             tags: ["fan_engagement", "fan", "facebook", "official"],
+          });
+        }
+      } catch {
+        // A failed search query just means fewer candidates this run.
+      }
+    }
+
+    return items;
+  }
+
+  // YouTube has no reliable flat-playlist/channel-listing support here (the
+  // @handle/videos channel page itself repeatedly fails yt-dlp extraction —
+  // it's not a single video), so candidates are found via search instead,
+  // same DuckDuckGo HTML-scrape pattern as Facebook. Per-item extraction is
+  // still attempted later and frequently fails/gets skipped — that's
+  // surfaced to the user rather than hidden.
+  private async crawlYouTubeSearch(): Promise<DiscoveryItem[]> {
+    const videoUrlPattern = /youtube\.com\/watch\?v=([\w-]{6,})/i;
+    const items: DiscoveryItem[] = [];
+    const seen = new Set<string>();
+
+    for (const query of [`site:youtube.com/watch ${this.artistName}`, `"${this.youtubeHandle}" youtube`]) {
+      try {
+        const response = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+          headers: { Accept: "text/html,application/xhtml+xml" },
+        });
+        if (!response.ok) continue;
+        const html = await response.text();
+        const matches = html.matchAll(/<a rel="nofollow" class="result__a" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g);
+
+        for (const match of matches) {
+          const href = match[1];
+          const ddgMatch = href.match(/[?&]uddg=([^&]+)/);
+          const decoded = ddgMatch ? decodeURIComponent(ddgMatch[1]) : href;
+          if (!videoUrlPattern.test(decoded) || seen.has(decoded)) continue;
+          seen.add(decoded);
+
+          const title = this.stripHtml(match[2] ?? "").trim() || `${this.artistName} YouTube video`;
+          items.push({
+            title,
+            description: `Official ${this.artistName} YouTube video for fan engagement — ${title}`,
+            url: decoded,
+            source: "YouTube",
+            mediaType: "video",
+            relevanceScore: 88,
+            tags: ["fan_engagement", "fan", "youtube", "official"],
           });
         }
       } catch {

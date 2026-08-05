@@ -1,13 +1,8 @@
 import { type NextRequest } from "next/server";
 import { NextResponse } from "next/server";
+import { LOCAL_AUTH_COOKIE, LOCAL_AUTH_TOKEN } from "@/lib/local-auth-constants";
 
-// Inlined (not imported from @/lib) so the Edge Function bundle for
-// middleware never has to trace into any other module in the project —
-// Vercel rejected the deployment when it did, even for a constants-only file.
-const LOCAL_AUTH_COOKIE = "marathon_auth";
-const LOCAL_AUTH_TOKEN = "marathon_local_session_v1";
-
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
   const authHeader = request.headers.get("x-marathon-auth") ?? request.headers.get("authorization") ?? "";
   const headerToken = authHeader.replace(/^Bearer\s+/i, "").trim();
