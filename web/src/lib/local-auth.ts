@@ -1,14 +1,14 @@
 import { cookies, headers } from "next/headers";
 
-export const LOCAL_AUTH_COOKIE = "marathon_auth";
-export const LOCAL_AUTH_TOKEN = "marathon_local_session_v1";
-export const LOCAL_USERNAME = "marathon";
-export const LOCAL_PASSWORD = "marathon364";
-export const LOCAL_AUTH_EMAIL = "marathon@local.only1";
-
-export function isValidCredential(username: string, password: string) {
-  return username === LOCAL_USERNAME && password === LOCAL_PASSWORD;
-}
+export {
+  LOCAL_AUTH_COOKIE,
+  LOCAL_AUTH_TOKEN,
+  LOCAL_USERNAME,
+  LOCAL_PASSWORD,
+  LOCAL_AUTH_EMAIL,
+  isValidCredential,
+} from "@/lib/local-auth-constants";
+import { LOCAL_AUTH_COOKIE, LOCAL_AUTH_TOKEN } from "@/lib/local-auth-constants";
 
 export async function hasLocalSession() {
   const cookieStore = await cookies();
