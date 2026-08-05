@@ -402,7 +402,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
   return (
     <article className="rounded-2xl border border-border bg-surface">
-      <div className="flex flex-wrap items-center justify-between gap-3 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
         <div className="flex items-center gap-3">
           <span className={`tally ${isLive ? "tally-live" : bot.health.isReady ? "tally-signal" : "tally-off"}`} />
           <div>
@@ -421,10 +421,10 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
       </div>
 
       {!bot.health.isReady && (
-        <p className="px-5 pb-3 text-xs text-signal">{bot.health.issues.join(" · ")}</p>
+        <p className="px-4 pb-3 text-xs text-signal sm:px-5">{bot.health.issues.join(" · ")}</p>
       )}
 
-      <div className="grid grid-cols-2 gap-2 px-5 pb-4 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 px-4 pb-4 sm:px-5 md:grid-cols-4">
         {setupSteps.map((step) => (
           <div key={step.label} className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
             <span className={`tally ${step.done ? "tally-live" : "tally-off"}`} />
@@ -434,8 +434,8 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
       </div>
 
       {expanded && (
-        <div className="border-t border-border p-5">
-          <div className="mb-5 flex gap-1 rounded-lg border border-border bg-canvas p-1 text-sm">
+        <div className="border-t border-border p-4 sm:p-5">
+          <div className="mb-5 grid grid-cols-2 gap-1 rounded-lg border border-border bg-canvas p-1 text-xs sm:flex sm:text-sm">
             {([
               ["voice", "Voice & schedule"],
               ["media", "Media"],
@@ -450,7 +450,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                   if (key === "activity") void loadQueue();
                   if (key === "posts") void loadPosts();
                 }}
-                className={`flex-1 rounded-md px-3 py-2 transition ${
+                className={`rounded-md px-2 py-2 transition sm:flex-1 sm:px-3 ${
                   tab === key ? "bg-signal text-canvas font-medium" : "text-faded hover:text-ink"
                 }`}
               >
@@ -620,7 +620,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                 </div>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button onClick={runAutomationCycle} disabled={automationLoading} className="btn-primary">
                   {automationLoading ? "Running…" : "Run now"}
                 </button>
@@ -631,9 +631,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
               {queueActionMessage && <p className="text-xs text-faded">{queueActionMessage}</p>}
 
               <div className="rounded-xl border border-border bg-canvas p-3">
-                <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-ink">Recent activity</p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-data text-[11px] text-faded">
                       {lastPostedLabel ? `Last posted ${formatActivityTime(lastPostedLabel)}` : "No posts yet"}
                     </span>
@@ -688,7 +688,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
               {failedItems.length > 0 && (
                 <div className="rounded-xl border border-alert/20 bg-alert/5 p-3">
-                  <div className="mb-2 flex items-center justify-between gap-2">
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-medium text-alert">Needs attention</p>
                     <button
                       onClick={() => clearQueueScope("logs")}

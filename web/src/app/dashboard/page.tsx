@@ -158,12 +158,12 @@ function DashboardPageInner() {
   return (
     <main className="min-h-screen bg-canvas text-ink">
       <header className="sticky top-0 z-20 border-b border-border bg-canvas/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-6 py-5">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-4 py-5 sm:px-6">
           <div>
             <p className="font-data text-[11px] uppercase tracking-[0.2em] text-faded">Only1Marathon</p>
             <h1 className="font-display text-3xl text-ink">Studio</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => cookiesInputRef.current?.click()}
@@ -209,12 +209,12 @@ function DashboardPageInner() {
           </div>
         </div>
         {cookiesUploadedMessage && (
-          <p className="mx-auto max-w-5xl px-6 pb-3 text-xs text-live">{cookiesUploadedMessage}</p>
+          <p className="mx-auto max-w-5xl px-4 pb-3 text-xs text-live sm:px-6">{cookiesUploadedMessage}</p>
         )}
-        {cookiesError && <p className="mx-auto max-w-5xl px-6 pb-3 text-xs text-alert">{cookiesError}</p>}
+        {cookiesError && <p className="mx-auto max-w-5xl px-4 pb-3 text-xs text-alert sm:px-6">{cookiesError}</p>}
       </header>
 
-      <section className="mx-auto max-w-5xl px-6 pt-8">
+      <section className="mx-auto max-w-5xl px-4 pt-8 sm:px-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <Stat label="Channels" value={bots.length} />
           <Stat label="Live now" value={live} tone="live" />
@@ -224,7 +224,7 @@ function DashboardPageInner() {
       </section>
 
       {toast && (
-        <section className="mx-auto max-w-5xl px-6 pt-4">
+        <section className="mx-auto max-w-5xl px-4 pt-4 sm:px-6">
           <div
             className={`flex items-start justify-between gap-4 rounded-xl border px-4 py-3 text-sm ${
               toast.tone === "live"
@@ -240,7 +240,7 @@ function DashboardPageInner() {
         </section>
       )}
 
-      <section className="mx-auto max-w-5xl px-6 pt-8">
+      <section className="mx-auto max-w-5xl px-4 pt-8 sm:px-6">
         {apiError && (
           <div className="mb-4 rounded-xl border border-alert/30 bg-alert/10 px-4 py-3 text-sm text-alert">
             {apiError}
@@ -288,7 +288,7 @@ function DashboardPageInner() {
         </div>
       </section>
 
-      <footer className="mx-auto flex max-w-5xl justify-end px-6 py-6">
+      <footer className="mx-auto flex max-w-5xl justify-end px-4 py-6 sm:px-6">
         <button
           onClick={handleGearClick}
           aria-label="Settings"

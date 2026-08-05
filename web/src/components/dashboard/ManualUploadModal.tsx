@@ -330,9 +330,9 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const publishableCount = selectedList.filter((e) => e.kind === "vault" || (e.mediaAssetId && !e.resolveError)).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-      <div className="flex h-[90vh] w-full max-w-5xl flex-col rounded-2xl border border-border bg-surface">
-        <div className="flex items-center justify-between border-b border-border px-5 py-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 sm:p-4">
+      <div className="flex h-full w-full flex-col rounded-none border-0 border-border bg-surface sm:h-[90vh] sm:max-w-5xl sm:rounded-2xl sm:border">
+        <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-5">
           <div>
             <h2 className="font-display text-xl text-ink">Manual upload</h2>
             <p className="text-xs text-faded">Hand-pick content and publish it directly.</p>
@@ -342,9 +342,9 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           </button>
         </div>
 
-        <div className="flex items-center gap-3 border-b border-border px-5 py-3">
+        <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-5">
           <span className="text-xs text-faded">Publish to</span>
-          <select value={botId} onChange={(e) => setBotId(e.target.value)} className="input max-w-xs">
+          <select value={botId} onChange={(e) => setBotId(e.target.value)} className="input min-w-0 flex-1 sm:max-w-xs sm:flex-none">
             {bots.map((bot) => (
               <option key={bot.id} value={bot.id}>
                 {bot.name}
@@ -352,7 +352,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
             ))}
           </select>
 
-          <div className="ml-auto flex gap-1 rounded-lg border border-border p-1">
+          <div className="flex gap-1 rounded-lg border border-border p-1 sm:ml-auto">
             <button
               onClick={() => setTab("vault")}
               className={`rounded-md px-3 py-1 text-xs ${tab === "vault" ? "bg-signal text-canvas" : "text-faded"}`}
@@ -368,11 +368,11 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           </div>
         </div>
 
-        {error && <p className="px-5 pt-3 text-xs text-alert">{error}</p>}
-        {resultMessage && <p className="px-5 pt-3 text-xs text-live">{resultMessage}</p>}
+        {error && <p className="px-4 pt-3 text-xs text-alert sm:px-5">{error}</p>}
+        {resultMessage && <p className="px-4 pt-3 text-xs text-live sm:px-5">{resultMessage}</p>}
 
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex flex-1 flex-col overflow-hidden md:flex-row">
+          <div className="min-w-0 flex-1 overflow-y-auto p-3 sm:p-4">
             {tab === "vault" && (
               <>
                 {categories.map((cat) => (
@@ -424,7 +424,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
 
             {tab === "live" && (
               <>
-                <div className="mb-3 flex gap-2">
+                <div className="mb-3 flex flex-wrap gap-2">
                   {PLATFORMS.map((p) => (
                     <button
                       key={p.id}
@@ -465,7 +465,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
             )}
           </div>
 
-          <div className="w-[380px] shrink-0 overflow-y-auto border-l border-border p-4">
+          <div className="max-h-[45vh] w-full shrink-0 overflow-y-auto border-t border-border p-3 sm:p-4 md:h-auto md:max-h-none md:w-[380px] md:border-l md:border-t-0">
             <h3 className="mb-2 text-sm font-medium text-ink">Review &amp; publish ({publishableCount})</h3>
             <div className="space-y-3">
               {selectedList.map((entry) => (
@@ -551,7 +551,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           </div>
         </div>
 
-        <div className="border-t border-border p-4">
+        <div className="border-t border-border p-3 sm:p-4">
           <button onClick={publishAll} disabled={publishing || publishableCount === 0} className="btn-primary w-full">
             {publishing ? "Publishing…" : `Publish all (${publishableCount})`}
           </button>
