@@ -121,6 +121,10 @@ export async function runAutomationCycle() {
 export function startAutomationLoop() {
   if (typeof window !== "undefined") return;
   if (globalState.__marathonAutomationLoopStarted) return;
+  // Vercel has no ffmpeg/yt-dlp and no persistent process for setInterval to
+  // live in — real automation runs on the local machine's server instead;
+  // Vercel is UI-only, so skip starting a loop that could only ever fail here.
+  if (process.env.VERCEL) return;
 
   globalState.__marathonAutomationLoopStarted = true;
   setInterval(() => {

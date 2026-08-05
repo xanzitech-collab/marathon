@@ -144,7 +144,7 @@ export async function discoverAndQueueContent(
     // item.mediaType saying "video". Verify before trusting it.
     if (item.mediaType === "video") {
       try {
-        const headRes = await fetch(mediaUrl, { method: "HEAD", redirect: "follow" });
+        const headRes = await fetch(mediaUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(15_000) });
         const contentType = headRes.headers.get("content-type") || "";
         const contentLength = Number(headRes.headers.get("content-length") ?? 0);
         const isRealVideo = contentType.startsWith("video/") || (contentType.startsWith("application/octet-stream") && contentLength > 100_000);
@@ -173,7 +173,7 @@ export async function discoverAndQueueContent(
     const originMediaUrl = mediaUrl;
 
     try {
-      const response = await fetch(mediaUrl, { redirect: "follow" });
+      const response = await fetch(mediaUrl, { redirect: "follow", signal: AbortSignal.timeout(45_000) });
       if (!response.ok) {
         skipped += 1;
         debug.push({ title: item.title, sourceUrl: item.url, mediaUrl, resolvedFrom, status: "skipped", reason: `media_fetch_failed:${response.status}` });
@@ -312,7 +312,7 @@ export async function discoverAndQueueContent(
 
     if (bot.content_target === "memes" && item.source !== "MemeVault" && uploadedMediaType === "image" && mediaUrl) {
       try {
-        const imgResponse = await fetch(mediaUrl);
+        const imgResponse = await fetch(mediaUrl, { signal: AbortSignal.timeout(30_000) });
         if (imgResponse.ok) {
           const imgBuffer = Buffer.from(await imgResponse.arrayBuffer());
           const imgBase64 = imgBuffer.toString("base64");

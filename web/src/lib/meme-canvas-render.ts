@@ -36,7 +36,7 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number,
 
 export async function renderJokeOntoImage(input: MemeRenderInput): Promise<RenderedMemeResult> {
   try {
-    const response = await fetch(input.imageUrl);
+    const response = await fetch(input.imageUrl, { signal: AbortSignal.timeout(45_000) });
     if (!response.ok) {
       return { ok: false, reason: `fetch_failed:${response.status}` };
     }

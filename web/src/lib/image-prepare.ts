@@ -36,7 +36,7 @@ function runFfmpeg(args: string[]): Promise<void> {
 }
 
 async function downloadImage(url: string, outputPath: string): Promise<void> {
-  const response = await fetch(url, { redirect: "follow" });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(45_000) });
   if (!response.ok) {
     throw new Error(`Failed to download image (${response.status})`);
   }

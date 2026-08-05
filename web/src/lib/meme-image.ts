@@ -49,7 +49,7 @@ function runFfmpeg(args: string[]) {
 }
 
 async function downloadImage(url: string, outputPath: string): Promise<string> {
-  const response = await fetch(url, { redirect: "follow" });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(45_000) });
   if (!response.ok) {
     throw new Error(`Failed to download meme image (${response.status})`);
   }

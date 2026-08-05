@@ -26,7 +26,7 @@ interface RenderOutput {
 }
 
 async function downloadToFile(url: string, filePath: string) {
-  const response = await fetch(url);
+  const response = await fetch(url, { signal: AbortSignal.timeout(45_000) });
   if (!response.ok) {
     throw new Error(`Download failed (${response.status}) for ${url}`);
   }

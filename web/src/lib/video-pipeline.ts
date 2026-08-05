@@ -28,7 +28,7 @@ interface ProcessVideoOutput {
 }
 
 async function downloadFile(url: string, outputPath: string) {
-  const response = await fetch(url, { redirect: "follow" });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
   if (!response.ok) {
     throw new Error(`Failed to download video (${response.status})`);
   }

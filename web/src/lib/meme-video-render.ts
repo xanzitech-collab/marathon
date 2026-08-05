@@ -23,7 +23,7 @@ export interface VideoKeyframeResult {
 }
 
 async function downloadToFile(url: string, outputPath: string): Promise<void> {
-  const response = await fetch(url, { redirect: "follow" });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
   if (!response.ok) {
     throw new Error(`video_download_failed:${response.status}`);
   }
