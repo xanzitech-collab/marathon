@@ -44,7 +44,13 @@ export async function POST(request: Request, { params }: Params) {
       );
     }
 
-    const response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(60_000) });
+    let response: Response;
+    try {
+      response = await fetch(resolvedUrl, { signal: AbortSignal.timeout(60_000) });
+    } catch (error) {
+      console.error("[live-resolve] media download fetch threw:", error);
+      return NextResponse.json({ error: "Could not download this video (network error). Try another item." }, { status: 422 });
+    }
     if (!response.ok) {
       return NextResponse.json({ error: `Media download failed (${response.status}). Try another item.` }, { status: 422 });
     }
