@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Explicitly use src directory
+  dir: "./src",
 };
 
 export default nextConfig;
