@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, ChevronDown, ChevronRight, Music, Trash2, Radio } from "lucide-react";
 import type { BotWithHealth, ConnectablePlatform, Song } from "@/types/app";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -71,6 +71,14 @@ const PUBLISH_PLATFORM_LABELS: Record<ConnectablePlatform, string> = {
   facebook: "Facebook",
 };
 
+function extractSourceAccountHandle(url: string): string | null {
+  const tiktokMatch = url.match(/tiktok\.com\/@([\w.-]+)/i);
+  if (tiktokMatch) return tiktokMatch[1];
+  const facebookMatch = url.match(/facebook\.com\/([\w.-]+)\//i);
+  if (facebookMatch) return facebookMatch[1];
+  return null;
+}
+
 export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [botId, setBotId] = useState(bots[0]?.id ?? "");
   const [tab, setTab] = useState<"vault" | "live">("vault");
@@ -86,6 +94,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const [selected, setSelected] = useState<Map<string, SelectedEntry>>(new Map());
   const [songs, setSongs] = useState<Song[]>([]);
@@ -95,6 +104,37 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [error, setError] = useState<string | null>(null);
 
   const connectedPlatforms = bots.find((b) => b.id === botId)?.health.connectedPlatforms ?? [];
+
+  const { liveGroups, liveUngrouped } = useMemo(() => {
+    const byHandle = new Map<string, LiveItem[]>();
+    const noHandle: LiveItem[] = [];
+    for (const item of liveItems) {
+      const handle = extractSourceAccountHandle(item.url);
+      if (!handle) {
+        noHandle.push(item);
+        continue;
+      }
+      const list = byHandle.get(handle) ?? [];
+      list.push(item);
+      byHandle.set(handle, list);
+    }
+    const groups: Array<{ handle: string; items: LiveItem[] }> = [];
+    const ungrouped: LiveItem[] = [...noHandle];
+    for (const [handle, items] of byHandle) {
+      if (items.length > 2) groups.push({ handle, items });
+      else ungrouped.push(...items);
+    }
+    return { liveGroups: groups, liveUngrouped: ungrouped };
+  }, [liveItems]);
+
+  const toggleGroupCollapsed = (handle: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(handle)) next.delete(handle);
+      else next.add(handle);
+      return next;
+    });
+  };
 
   useEffect(() => {
     void (async () => {
@@ -471,23 +511,43 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                   <p className="text-sm text-faded">No recent {platform} content found. Try another platform.</p>
                 )}
                 <div className="space-y-2">
-                  {liveItems.map((item) => {
-                    const key = `live:${item.url}`;
-                    const isSelected = selected.has(key);
+                  {liveGroups.map((group) => {
+                    const isCollapsed = collapsedGroups.has(group.handle);
                     return (
-                      <button
-                        key={item.url}
-                        onClick={() => void toggleSelectLive(item)}
-                        className={`block w-full rounded-lg border p-3 text-left text-xs ${
-                          isSelected ? "border-signal ring-2 ring-signal/50" : "border-border"
-                        }`}
-                      >
-                        <p className="truncate font-medium text-ink">{item.title}</p>
-                        <p className="mt-1 truncate text-faded">{item.description}</p>
-                        <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-faded">{item.source}</span>
-                      </button>
+                      <div key={group.handle} className="rounded-lg border border-border">
+                        <button
+                          onClick={() => toggleGroupCollapsed(group.handle)}
+                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                            <span className="truncate">@{group.handle}</span>
+                          </span>
+                          <span className="shrink-0 font-data text-[11px] text-faded">{group.items.length} videos</span>
+                        </button>
+                        {!isCollapsed && (
+                          <div className="space-y-2 border-t border-border p-2">
+                            {group.items.map((item) => (
+                              <LiveItemButton
+                                key={item.url}
+                                item={item}
+                                isSelected={selected.has(`live:${item.url}`)}
+                                onClick={() => void toggleSelectLive(item)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     );
                   })}
+                  {liveUngrouped.map((item) => (
+                    <LiveItemButton
+                      key={item.url}
+                      item={item}
+                      isSelected={selected.has(`live:${item.url}`)}
+                      onClick={() => void toggleSelectLive(item)}
+                    />
+                  ))}
                 </div>
               </>
             )}
@@ -614,5 +674,20 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       </div>
     </div>
 
+  );
+}
+
+function LiveItemButton({ item, isSelected, onClick }: { item: LiveItem; isSelected: boolean; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`block w-full rounded-lg border p-3 text-left text-xs ${
+        isSelected ? "border-signal ring-2 ring-signal/50" : "border-border"
+      }`}
+    >
+      <p className="truncate font-medium text-ink">{item.title}</p>
+      <p className="mt-1 truncate text-faded">{item.description}</p>
+      <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-faded">{item.source}</span>
+    </button>
   );
 }

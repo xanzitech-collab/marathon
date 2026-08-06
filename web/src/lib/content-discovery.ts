@@ -26,6 +26,25 @@ interface BotRecord {
   custom_target_prompt?: string | null;
 }
 
+// Fan/edit accounts known to regularly post or repost content featuring the
+// artist — crawled alongside the artist's own profile so "Live" browsing has
+// real depth instead of relying on one account's fixed upload count.
+const TIKTOK_CURATED_FAN_HANDLES = [
+  "millionaire_mentality_7",
+  "luxe.aestique",
+  "domersim",
+  "sending234",
+  ".scenesclips",
+  "caarif63",
+  "_m.r.e.n.o_",
+  "puregirls6",
+  "the.black.zx6r",
+  "footyedits10.1",
+  "luxury_exotics_1",
+  "momentsofgregory",
+  "majesticnaturemoments",
+];
+
 export class ContentDiscoveryService {
   private readonly artistName = ARTIST_CONTEXT.name;
   private readonly artistHandle = ARTIST_CONTEXT.instagramHandle;
@@ -391,18 +410,35 @@ export class ContentDiscoveryService {
   }
 
   private async crawlTikTokProfile(): Promise<DiscoveryItem[]> {
-    const videos = await extractTikTokProfileVideos(this.tiktokHandle, 15);
-    return videos.map((video) => ({
-      title: video.title || `${this.artistName} TikTok clip`,
-      description: `Official ${this.artistName} TikTok video for fan engagement — ${video.title || video.id}`,
-      url: video.url,
-      source: "TikTok",
-      mediaType: "video" as const,
-      // Ranked above generic search results — this is first-party artist
-      // content straight from their own page, not a random search hit.
-      relevanceScore: 92,
-      tags: ["fan_engagement", "fan", "tiktok", "official"],
-    }));
+    // 15 was an arbitrary cap that cut off real uploads (the artist's
+    // profile alone has 40+ clips) — raised well past that, and now also
+    // crawls known fan/edit accounts in parallel for real depth.
+    const handles = [this.tiktokHandle, ...TIKTOK_CURATED_FAN_HANDLES];
+    const results = await Promise.allSettled(handles.map((handle) => extractTikTokProfileVideos(handle, 50)));
+
+    const items: DiscoveryItem[] = [];
+    results.forEach((result, index) => {
+      if (result.status !== "fulfilled") return;
+      const handle = handles[index];
+      const isArtist = handle === this.tiktokHandle;
+      for (const video of result.value) {
+        items.push({
+          title: video.title || `${isArtist ? this.artistName : `@${handle}`} TikTok clip`,
+          description: isArtist
+            ? `Official ${this.artistName} TikTok video for fan engagement — ${video.title || video.id}`
+            : `Fan-page TikTok video from @${handle} featuring ${this.artistName} — ${video.title || video.id}`,
+          url: video.url,
+          source: "TikTok",
+          mediaType: "video" as const,
+          // Ranked above generic search results — this is first-party artist
+          // content straight from their own page, not a random search hit.
+          relevanceScore: isArtist ? 92 : 85,
+          tags: isArtist ? ["fan_engagement", "fan", "tiktok", "official"] : ["fan_engagement", "fan", "tiktok"],
+        });
+      }
+    });
+
+    return items;
   }
 
   // The artist's own profile (crawlTikTokProfile) is a small fixed pool that
