@@ -105,6 +105,10 @@ function escapeFilterPath(filePath: string): string {
 async function resolveFontPath(): Promise<string> {
   const candidates = [
     process.env.MEME_FONT_PATH,
+    // Linux (Render/Docker) — installed via fonts-dejavu-core in the Dockerfile.
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    // Windows (local dev)
     "C:\\Windows\\Fonts\\arialbd.ttf",
     "C:\\Windows\\Fonts\\Arialbd.ttf",
     "C:\\Windows\\Fonts\\arial.ttf",

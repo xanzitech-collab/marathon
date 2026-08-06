@@ -8,9 +8,12 @@
 FROM node:20-bookworm AS base
 
 # ffmpeg: used directly (spawn) for soundtrack rendering and image prep.
+# fonts-dejavu-core: caption/meme text overlays need a real font file on disk
+# (see meme-image.ts/ffmpeg-processor.ts) — nothing is installed by default.
 # The rest: canvas's native build dependencies (per canvas's own install docs).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
+    fonts-dejavu-core \
     build-essential \
     python3 \
     pkg-config \
