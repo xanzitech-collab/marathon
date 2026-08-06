@@ -100,6 +100,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [songs, setSongs] = useState<Song[]>([]);
   const [songPickerFor, setSongPickerFor] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<{ done: number; total: number } | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -332,64 +333,77 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     setPublishing(true);
     setResultMessage(null);
     setError(null);
-    try {
-      const entries = Array.from(selected.values());
-      const vaultItems = entries
-        .filter((e) => e.kind === "vault" && e.vaultItemId && e.platforms.length > 0)
-        .map((e) => ({
-          vaultItemId: e.vaultItemId,
-          caption: e.caption,
-          tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
-          songId: e.songId,
-          noSong: e.noSong,
-          platforms: e.platforms,
-        }));
-      const liveEntries = entries
-        .filter((e) => e.kind === "live" && e.mediaAssetId && !e.resolveError && e.platforms.length > 0)
-        .map((e) => ({
-          mediaAssetId: e.mediaAssetId,
-          mediaType: e.mediaType,
-          caption: e.caption,
-          tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
-          songId: e.songId,
-          noSong: e.noSong,
-          sourceUrl: e.sourceUrl,
-          sourceLabel: e.sourceLabel,
-          discoveryTitle: e.title,
-          discoveryDescription: e.title,
-          platforms: e.platforms,
-        }));
 
-      let publishedCount = 0;
-      let totalCount = 0;
+    const entries = Array.from(selected.values());
+    const vaultJobs = entries
+      .filter((e) => e.kind === "vault" && e.vaultItemId && e.platforms.length > 0)
+      .map((e) => ({
+        endpoint: `/api/bots/${botId}/manual-publish`,
+        items: [
+          {
+            vaultItemId: e.vaultItemId,
+            caption: e.caption,
+            tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
+            songId: e.songId,
+            noSong: e.noSong,
+            platforms: e.platforms,
+          },
+        ],
+      }));
+    const liveJobs = entries
+      .filter((e) => e.kind === "live" && e.mediaAssetId && !e.resolveError && e.platforms.length > 0)
+      .map((e) => ({
+        endpoint: `/api/bots/${botId}/live-publish`,
+        items: [
+          {
+            mediaAssetId: e.mediaAssetId,
+            mediaType: e.mediaType,
+            caption: e.caption,
+            tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
+            songId: e.songId,
+            noSong: e.noSong,
+            sourceUrl: e.sourceUrl,
+            sourceLabel: e.sourceLabel,
+            discoveryTitle: e.title,
+            discoveryDescription: e.title,
+            platforms: e.platforms,
+          },
+        ],
+      }));
 
-      if (vaultItems.length > 0) {
-        const result = await safeFetchJson<{ publishedCount?: number; totalCount?: number; error?: string }>(
-          `/api/bots/${botId}/manual-publish`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: vaultItems }) },
-        );
-        if (!result.ok) throw new Error(result.error || "Vault publish failed.");
-        publishedCount += result.data?.publishedCount ?? 0;
-        totalCount += result.data?.totalCount ?? vaultItems.length;
+    // Published one item per request instead of one batched call so the
+    // button can show live progress (N/total) as each one finishes, instead
+    // of a single opaque "Publishing…" until the whole batch completes.
+    const jobs = [...vaultJobs, ...liveJobs];
+    const total = jobs.length;
+    setPublishProgress({ done: 0, total });
+
+    let publishedCount = 0;
+    const errors: string[] = [];
+
+    for (const job of jobs) {
+      try {
+        const result = await safeFetchJson<{ publishedCount?: number; error?: string }>(job.endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items: job.items }),
+        });
+        if (result.ok) {
+          publishedCount += result.data?.publishedCount ?? 0;
+        } else {
+          errors.push(result.error || "Publish failed.");
+        }
+      } catch (jobError) {
+        errors.push(jobError instanceof Error ? jobError.message : "Publish failed.");
       }
-
-      if (liveEntries.length > 0) {
-        const result = await safeFetchJson<{ publishedCount?: number; totalCount?: number; error?: string }>(
-          `/api/bots/${botId}/live-publish`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items: liveEntries }) },
-        );
-        if (!result.ok) throw new Error(result.error || "Live publish failed.");
-        publishedCount += result.data?.publishedCount ?? 0;
-        totalCount += result.data?.totalCount ?? liveEntries.length;
-      }
-
-      setResultMessage(`Published ${publishedCount} of ${totalCount}.`);
-      setSelected(new Map());
-    } catch (publishError) {
-      setError(publishError instanceof Error ? publishError.message : "Publish failed.");
-    } finally {
-      setPublishing(false);
+      setPublishProgress((prev) => (prev ? { done: prev.done + 1, total: prev.total } : prev));
     }
+
+    setResultMessage(`Published ${publishedCount} of ${total}.`);
+    if (errors.length > 0) setError(errors.slice(0, 3).join(" | "));
+    setSelected(new Map());
+    setPublishing(false);
+    setPublishProgress(null);
   };
 
   const selectedList = Array.from(selected.values());
@@ -668,7 +682,11 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
 
         <div className="border-t border-border p-3 sm:p-4">
           <button onClick={publishAll} disabled={publishing || publishableCount === 0} className="btn-primary w-full">
-            {publishing ? "Publishing…" : `Publish all (${publishableCount})`}
+            {publishing
+              ? publishProgress
+                ? `Publishing ${publishProgress.done}/${publishProgress.total}…`
+                : "Publishing…"
+              : `Publish all (${publishableCount})`}
           </button>
         </div>
       </div>
