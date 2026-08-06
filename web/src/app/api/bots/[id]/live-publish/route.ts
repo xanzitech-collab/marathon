@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { queueAndPublishManualItem } from "@/lib/manual-queue";
+import { isConnectablePlatform } from "@/lib/platform-accounts";
+import type { ConnectablePlatform } from "@/types/app";
+
+function isConnectablePlatformArray(value: unknown): value is ConnectablePlatform[] {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string" && isConnectablePlatform(v));
+}
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -18,6 +24,7 @@ interface LiveItemInput {
   sourceLabel: string;
   discoveryTitle?: string | null;
   discoveryDescription?: string | null;
+  platforms?: string[];
 }
 
 export async function POST(request: Request, { params }: Params) {
@@ -63,6 +70,7 @@ export async function POST(request: Request, { params }: Params) {
           discoveryTitle: input.discoveryTitle,
           discoveryDescription: input.discoveryDescription,
           extraMetadata: { source_url: input.sourceUrl },
+          targetPlatforms: isConnectablePlatformArray(input.platforms) ? input.platforms : undefined,
         });
         result.queued = manualResult.queued;
         result.published = manualResult.published;

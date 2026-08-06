@@ -124,6 +124,21 @@ export class XenrioClient {
     return undefined;
   }
 
+  // Zernio sometimes returns a whole object stringified in an id field (e.g.
+  // '{"_id":"...","name":"..."}') instead of a plain id — confirmed on both
+  // the profile-name-conflict error path and a plain successful /profiles
+  // response. Never persist a JSON blob as an id; always unwrap through this.
+  private static unwrapId(raw: string | undefined): string | undefined {
+    if (!raw) return undefined;
+    if (!raw.trim().startsWith("{")) return raw;
+    try {
+      const nested = JSON.parse(raw) as { _id?: string; id?: string };
+      return XenrioClient.pickFirstString(nested._id, nested.id);
+    } catch {
+      return undefined;
+    }
+  }
+
   private static payloadShape(input: unknown): string {
     if (!input || typeof input !== "object") return "non-object payload";
     const obj = input as Record<string, unknown>;
@@ -148,20 +163,7 @@ export class XenrioClient {
       const raw = XenrioClient.pickFirstString(parsed.details?.existingProfileId, parsed.details?.existingProfileld);
       if (!raw) return undefined;
 
-      // Zernio sometimes returns the whole profile object stringified in this
-      // field (e.g. '{"_id":"...","name":"..."}') instead of a plain id —
-      // confirmed by a real corrupted zernio_profile_id stored from this path.
-      // Unwrap it so we never persist a JSON blob as the profile id.
-      if (raw.trim().startsWith("{")) {
-        try {
-          const nested = JSON.parse(raw) as { _id?: string; id?: string };
-          return XenrioClient.pickFirstString(nested._id, nested.id) ?? undefined;
-        } catch {
-          return undefined;
-        }
-      }
-
-      return raw;
+      return XenrioClient.unwrapId(raw);
     } catch {
       return undefined;
     }
@@ -183,15 +185,17 @@ export class XenrioClient {
       throw error;
     }
 
-    const profileId = XenrioClient.pickFirstString(
-      payload.data?.profile?._id,
-      payload.data?.profile?.id,
-      payload.data?.profileId,
-      payload.data?.id,
-      payload.profile?._id,
-      payload.profile?.id,
-      payload.profileId,
-      payload.id,
+    const profileId = XenrioClient.unwrapId(
+      XenrioClient.pickFirstString(
+        payload.data?.profile?._id,
+        payload.data?.profile?.id,
+        payload.data?.profileId,
+        payload.data?.id,
+        payload.profile?._id,
+        payload.profile?.id,
+        payload.profileId,
+        payload.id,
+      ),
     );
 
     if (!profileId) {
@@ -252,13 +256,13 @@ export class XenrioClient {
     const accounts = payload.data?.accounts ?? payload.accounts ?? [];
     return accounts.reduce<Array<{ id: string; platform: string; username?: string; profileId?: string; externalPostCount?: number }>>(
       (acc, account) => {
-        const id = XenrioClient.pickFirstString(account._id, account.id);
+        const id = XenrioClient.unwrapId(XenrioClient.pickFirstString(account._id, account.id));
         if (!id) return acc;
         acc.push({
           id,
           platform: account.platform,
           username: account.username,
-          profileId: account.profileId,
+          profileId: XenrioClient.unwrapId(account.profileId),
           externalPostCount: typeof account.externalPostCount === "number" ? account.externalPostCount : undefined,
         });
         return acc;

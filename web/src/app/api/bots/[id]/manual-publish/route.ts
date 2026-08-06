@@ -3,8 +3,14 @@ import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { queueAndPublishManualItem } from "@/lib/manual-queue";
 import { markVaultItemPosted } from "@/lib/meme-vault";
+import { isConnectablePlatform } from "@/lib/platform-accounts";
+import type { ConnectablePlatform } from "@/types/app";
 
 const VAULT_BUCKET = process.env.SUPABASE_MEME_VAULT_BUCKET ?? "meme-vault";
+
+function isConnectablePlatformArray(value: unknown): value is ConnectablePlatform[] {
+  return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string" && isConnectablePlatform(v));
+}
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -16,6 +22,7 @@ interface ManualItemInput {
   tags: string[];
   songId: string | null;
   noSong: boolean;
+  platforms?: string[];
 }
 
 export async function POST(request: Request, { params }: Params) {
@@ -113,6 +120,7 @@ export async function POST(request: Request, { params }: Params) {
           discoveryTitle: vaultItem.original_filename,
           discoveryDescription: vaultItem.context_text,
           extraMetadata: { vault_item_id: vaultItem.id },
+          targetPlatforms: isConnectablePlatformArray(input.platforms) ? input.platforms : undefined,
         });
         result.queued = manualResult.queued;
         result.published = manualResult.published;

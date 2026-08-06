@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import { publishNextQueuedItem } from "@/lib/publish-service";
+import type { ConnectablePlatform } from "@/types/app";
 
 type BotRow = Database["public"]["Tables"]["bots"]["Row"];
 
@@ -22,6 +23,7 @@ interface QueueAndPublishOptions {
   discoveryTitle?: string | null;
   discoveryDescription?: string | null;
   extraMetadata?: Record<string, unknown>;
+  targetPlatforms?: ConnectablePlatform[];
 }
 
 /**
@@ -67,7 +69,10 @@ export async function queueAndPublishManualItem(
 
   result.queued = true;
 
-  const publishResult = await publishNextQueuedItem(supabase, bot, { preferredItemId: queueRow.id });
+  const publishResult = await publishNextQueuedItem(supabase, bot, {
+    preferredItemId: queueRow.id,
+    targetPlatforms: options.targetPlatforms,
+  });
   result.published = Boolean(publishResult.body.success);
   if (!publishResult.body.success) {
     const bodyError = publishResult.body.error;

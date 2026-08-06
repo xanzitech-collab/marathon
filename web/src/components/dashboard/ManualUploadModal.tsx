@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { X, ChevronDown, ChevronRight, Music, Trash2, Radio } from "lucide-react";
-import type { BotWithHealth, Song } from "@/types/app";
+import type { BotWithHealth, ConnectablePlatform, Song } from "@/types/app";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
 interface CategorySummary {
@@ -50,6 +50,7 @@ interface SelectedEntry {
   sourceUrl?: string;
   sourceLabel?: string;
   resolveError?: string;
+  platforms: ConnectablePlatform[];
 }
 
 interface ManualUploadModalProps {
@@ -62,6 +63,13 @@ const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "facebook", label: "Facebook" },
   { id: "youtube", label: "YouTube" },
 ];
+
+const PUBLISH_PLATFORMS: ConnectablePlatform[] = ["instagram", "tiktok", "facebook"];
+const PUBLISH_PLATFORM_LABELS: Record<ConnectablePlatform, string> = {
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  facebook: "Facebook",
+};
 
 export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [botId, setBotId] = useState(bots[0]?.id ?? "");
@@ -85,6 +93,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [publishing, setPublishing] = useState(false);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const connectedPlatforms = bots.find((b) => b.id === botId)?.health.connectedPlatforms ?? [];
 
   useEffect(() => {
     void (async () => {
@@ -163,6 +173,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       noSong: false,
       captionLoading: true,
       vaultItemId: item.id,
+      platforms: connectedPlatforms,
     });
     setSelected(next);
 
@@ -210,6 +221,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       captionLoading: true,
       sourceUrl: item.url,
       sourceLabel: item.source,
+      platforms: connectedPlatforms,
     });
     setSelected(next);
 
@@ -257,6 +269,18 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     });
   };
 
+  const togglePlatformForEntry = (key: string, targetPlatform: ConnectablePlatform) => {
+    setSelected((prev) => {
+      const updated = new Map(prev);
+      const existing = updated.get(key);
+      if (!existing) return prev;
+      const has = existing.platforms.includes(targetPlatform);
+      const platforms = has ? existing.platforms.filter((p) => p !== targetPlatform) : [...existing.platforms, targetPlatform];
+      updated.set(key, { ...existing, platforms });
+      return updated;
+    });
+  };
+
   const removeSelected = (key: string) => {
     const next = new Map(selected);
     next.delete(key);
@@ -271,16 +295,17 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     try {
       const entries = Array.from(selected.values());
       const vaultItems = entries
-        .filter((e) => e.kind === "vault" && e.vaultItemId)
+        .filter((e) => e.kind === "vault" && e.vaultItemId && e.platforms.length > 0)
         .map((e) => ({
           vaultItemId: e.vaultItemId,
           caption: e.caption,
           tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
           songId: e.songId,
           noSong: e.noSong,
+          platforms: e.platforms,
         }));
       const liveEntries = entries
-        .filter((e) => e.kind === "live" && e.mediaAssetId && !e.resolveError)
+        .filter((e) => e.kind === "live" && e.mediaAssetId && !e.resolveError && e.platforms.length > 0)
         .map((e) => ({
           mediaAssetId: e.mediaAssetId,
           mediaType: e.mediaType,
@@ -292,6 +317,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           sourceLabel: e.sourceLabel,
           discoveryTitle: e.title,
           discoveryDescription: e.title,
+          platforms: e.platforms,
         }));
 
       let publishedCount = 0;
@@ -327,7 +353,9 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   };
 
   const selectedList = Array.from(selected.values());
-  const publishableCount = selectedList.filter((e) => e.kind === "vault" || (e.mediaAssetId && !e.resolveError)).length;
+  const publishableCount = selectedList.filter(
+    (e) => (e.kind === "vault" || (e.mediaAssetId && !e.resolveError)) && e.platforms.length > 0,
+  ).length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 sm:p-4">
@@ -495,6 +523,33 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     placeholder="tags, comma, separated"
                     className="input mt-2 text-xs"
                   />
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {PUBLISH_PLATFORMS.map((p) => {
+                      const isConnected = connectedPlatforms.includes(p);
+                      const isOn = entry.platforms.includes(p);
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          disabled={!isConnected}
+                          onClick={() => togglePlatformForEntry(entry.key, p)}
+                          title={isConnected ? undefined : `${PUBLISH_PLATFORM_LABELS[p]} isn't connected on this channel`}
+                          className={`rounded-full border px-2 py-0.5 text-[11px] transition ${
+                            !isConnected
+                              ? "cursor-not-allowed border-border/40 text-faded/40"
+                              : isOn
+                                ? "border-signal bg-signal/10 text-signal"
+                                : "border-border text-faded hover:text-ink"
+                          }`}
+                        >
+                          {PUBLISH_PLATFORM_LABELS[p]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {entry.platforms.length === 0 && (
+                    <p className="mt-1 text-[11px] text-alert">No platform selected — this item won&apos;t be published.</p>
+                  )}
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={() => setSongPickerFor(songPickerFor === entry.key ? null : entry.key)}

@@ -14,6 +14,7 @@ import { isFocusAligned, isKnownWrapperSource } from "@/lib/content-guard";
 import { createPublishApiError, createPublishApiResult, type PublishApiResult } from "@/lib/publish-response";
 import { listPlatformAccounts } from "@/lib/platform-accounts";
 import type { XenrioPublishTarget } from "@/lib/xenrio/client";
+import type { ConnectablePlatform } from "@/types/app";
 
 type BotRow = Database["public"]["Tables"]["bots"]["Row"];
 
@@ -26,7 +27,7 @@ type BotRow = Database["public"]["Tables"]["bots"]["Row"];
 export async function publishNextQueuedItem(
   supabase: SupabaseClient,
   bot: BotRow,
-  options?: { preferredItemId?: string },
+  options?: { preferredItemId?: string; targetPlatforms?: ConnectablePlatform[] },
 ): Promise<PublishApiResult> {
   const id = bot.id;
   const userId = bot.user_id;
@@ -204,7 +205,7 @@ export async function publishNextQueuedItem(
 
   const accountId = bot.zernio_account_id ?? bot.instagram_business_id;
   const platformAccounts = await listPlatformAccounts(supabase, id);
-  const connectedTargets: XenrioPublishTarget[] = platformAccounts
+  let connectedTargets: XenrioPublishTarget[] = platformAccounts
     .filter((account) => account.connection_status === "connected")
     .map((account) => ({ platform: account.platform, accountId: account.zernio_account_id }));
 
@@ -212,6 +213,13 @@ export async function publishNextQueuedItem(
   // legacy single Instagram account column, not a bot_platform_accounts row yet.
   if (connectedTargets.length === 0 && accountId) {
     connectedTargets.push({ platform: "instagram", accountId });
+  }
+
+  // Manual publish flows let the user pick which connected platforms a
+  // specific item goes to (rather than always posting to every one).
+  if (options?.targetPlatforms && options.targetPlatforms.length > 0) {
+    const requested = new Set(options.targetPlatforms);
+    connectedTargets = connectedTargets.filter((target) => requested.has(target.platform));
   }
 
   if (connectedTargets.length === 0) {
