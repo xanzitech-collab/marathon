@@ -240,6 +240,26 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     }
   };
 
+  const syncPlatform = async (platform: ConnectablePlatform) => {
+    setInstagramActionLoading(platform);
+    setQueueActionMessage(null);
+    try {
+      const result = await safeFetchJson<{ error?: string }>(`/api/bots/${bot.id}/connect`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "sync", platform }),
+      });
+      if (!result.ok) {
+        setQueueActionMessage(result.error || `Couldn't sync ${PLATFORM_LABELS[platform]}. Finish connecting it on ${PLATFORM_LABELS[platform]}/Zernio first.`);
+        return;
+      }
+      setQueueActionMessage(`${PLATFORM_LABELS[platform]} synced.`);
+      await onUpdated();
+    } finally {
+      setInstagramActionLoading(null);
+    }
+  };
+
   const buildMission = async () => {
     setMissionLoading(true);
     try {
@@ -697,6 +717,16 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                         >
                           {busy ? "Working…" : connected ? "Disconnect" : "Connect"}
                         </button>
+                        {!connected && (
+                          <button
+                            onClick={() => syncPlatform(platform)}
+                            disabled={busy}
+                            title="Already authorized on the platform/Zernio but not showing here yet? Re-check without redoing OAuth."
+                            className="text-xs text-faded hover:text-ink"
+                          >
+                            Sync
+                          </button>
+                        )}
                       </div>
                     );
                   })}

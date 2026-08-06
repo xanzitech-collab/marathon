@@ -95,29 +95,39 @@ function DashboardPageInner() {
   const toast = useMemo(() => {
     const connectError = searchParams.get("connectError");
     const connectedBot = searchParams.get("connectedBot");
+    const connectedPlatform = searchParams.get("connectedPlatform");
     const zernioSynced = searchParams.get("zernioSynced");
+
+    const platformLabel = connectedPlatform
+      ? connectedPlatform.charAt(0).toUpperCase() + connectedPlatform.slice(1)
+      : "Account";
 
     if (zernioSynced === "1") {
       return {
         tone: "live" as const,
         message: connectedBot
-          ? `Instagram connected for ${connectedBot}.`
-          : "Instagram connected.",
+          ? `${platformLabel} connected for ${connectedBot}.`
+          : `${platformLabel} connected.`,
       };
     }
 
     if (!connectError) return null;
 
+    const accountNotFoundMatch = connectError.match(/^(instagram|tiktok|facebook)_account_not_found$/);
+
     const errorMap: Record<string, string> = {
       missing_bot_state: "Connection lost mid-setup. Try connecting again.",
       bot_not_found: "Couldn't find that channel. Try connecting again.",
-      instagram_account_not_found: "No Instagram account found. Finish authorizing, then try again.",
-      sync_failed: "Instagram connected, but syncing failed. Try again.",
+      sync_failed: "Connected on the platform, but syncing it into the app failed. Try the Sync button next to that platform.",
     };
+
+    const message = accountNotFoundMatch
+      ? `Authorized, but no ${accountNotFoundMatch[1]} account showed up yet (e.g. still picking a Facebook Page). Finish that step, then use the Sync button next to that platform instead of reconnecting.`
+      : errorMap[connectError] ?? `Connection failed: ${connectError}`;
 
     return {
       tone: "alert" as const,
-      message: errorMap[connectError] ?? `Connection failed: ${connectError}`,
+      message,
     };
   }, [searchParams]);
 
@@ -125,6 +135,7 @@ function DashboardPageInner() {
     const next = new URLSearchParams(searchParams.toString());
     next.delete("connectError");
     next.delete("connectedBot");
+    next.delete("connectedPlatform");
     next.delete("zernioSynced");
     const nextUrl = next.toString() ? `${pathname}?${next.toString()}` : pathname;
     router.replace(nextUrl);
