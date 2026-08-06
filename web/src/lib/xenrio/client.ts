@@ -58,7 +58,7 @@ interface ListAccountsResponse {
     _id?: string;
     platform: string;
     username?: string;
-    profileId?: string;
+    profileId?: unknown;
     externalPostCount?: number;
   }>;
   data?: {
@@ -67,7 +67,7 @@ interface ListAccountsResponse {
       _id?: string;
       platform: string;
       username?: string;
-      profileId?: string;
+      profileId?: unknown;
       externalPostCount?: number;
     }>;
   };
@@ -124,12 +124,19 @@ export class XenrioClient {
     return undefined;
   }
 
-  // Zernio sometimes returns a whole object stringified in an id field (e.g.
-  // '{"_id":"...","name":"..."}') instead of a plain id — confirmed on both
-  // the profile-name-conflict error path and a plain successful /profiles
-  // response. Never persist a JSON blob as an id; always unwrap through this.
-  private static unwrapId(raw: string | undefined): string | undefined {
+  // Zernio sometimes returns a whole object instead of a plain id in an id
+  // field — either as a real nested object ({"_id":"...","name":"..."}) or
+  // that same object JSON-stringified. Confirmed on the profile-name-conflict
+  // error path, a plain successful /profiles response, and /accounts'
+  // profileId field. Never persist/compare a JSON blob or object as an id;
+  // always unwrap through this instead of assuming the field is a string.
+  private static unwrapId(raw: unknown): string | undefined {
     if (!raw) return undefined;
+    if (typeof raw === "object") {
+      const obj = raw as { _id?: string; id?: string };
+      return XenrioClient.pickFirstString(obj._id, obj.id);
+    }
+    if (typeof raw !== "string") return undefined;
     if (!raw.trim().startsWith("{")) return raw;
     try {
       const nested = JSON.parse(raw) as { _id?: string; id?: string };
