@@ -1,0 +1,89 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Deploy: connect this repo in the Render dashboard ("New +" -> "Blueprint"),
+# it'll pick this file up automatically. All env vars below are marked
+# sync: false (secrets), so Render will prompt you to fill in real values
+# during setup instead of storing them in this file.
+services:
+  - type: web
+    name: marathon
+    runtime: docker
+    plan: free
+    rootDir: web
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: NEXT_PUBLIC_FACEBOOK_APP_ID
+        sync: false
+      - key: FACEBOOK_APP_SECRET
+        sync: false
+      - key: ZERNIO_BASE_URL
+        value: https://zernio.com/api/v1
+      - key: INSTAGRAM_GRAPH_BASE_URL
+        value: https://graph.facebook.com/v20.0
+      - key: XENRIO_API_KEY_1
+        sync: false
+      - key: XENRIO_API_KEY_2
+        sync: false
+      - key: XENRIO_API_KEY_3
+        sync: false
+      - key: XENRIO_API_KEY_4
+        sync: false
+      - key: XENRIO_API_KEY_5
+        sync: false
+      - key: GEMINI_API_KEY_1
+        sync: false
+      - key: GEMINI_API_KEY_2
+        sync: false
+      - key: GEMINI_API_KEY_3
+        sync: false
+      - key: GEMINI_API_KEY_4
+        sync: false
+      - key: GEMINI_API_KEY_5
+        sync: false
+      - key: ARTIST_NAME
+        sync: false
+      - key: ARTIST_INSTAGRAM_HANDLE
+        sync: false
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: SCHEDULER_CRON
+        value: "*/15 * * * *"
+      - key: DEFAULT_MAX_POSTS_PER_DAY
+        value: "2"
+      - key: HARD_MAX_POSTS_PER_DAY
+        value: "3"
+      - key: DEFAULT_COOLDOWN_MINUTES
+        value: "240"
+      - key: SUPABASE_MEDIA_BUCKET
+        value: bot-media
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: REDDIT_VIDEO_SCRAPE_ENABLED
+        value: "false"
+      - key: VIDEO_MAX_DURATION_SECONDS
+        value: "30"
+      - key: NO_REPEAT_MEDIA_WINDOW_POSTS
+        value: "5"
+      - key: NO_REPEAT_SONG_WINDOW_POSTS
+        value: "4"
+      - key: DISCOVER_MAX_QUEUE_INSERTS
+        value: "5"
+      - key: MEME_FONT_PATH
+        sync: false
+      - key: SONG_CLIP_MIN_OFFSET_SECONDS
+        value: "12"
+      - key: SONG_CLIP_END_BUFFER_SECONDS
+        value: "10"
