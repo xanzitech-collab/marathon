@@ -233,7 +233,11 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
       `${input.queueItemId}:${input.botId}`,
       structureHints,
     );
-    const videoFilter = "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2";
+    // Scale to *cover* the target frame and center-crop the overflow, rather
+    // than fitting inside it and padding the remainder with black bars —
+    // letterboxing looked broken/unfinished (confirmed on real posted
+    // images). Matches how Reels/TikTok/Stories always fill the frame.
+    const videoFilter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920";
 
     // Instagram's audio-recognition needs a decent continuous stretch of the
     // song to fingerprint-match it — a source clip shorter than this leaves
