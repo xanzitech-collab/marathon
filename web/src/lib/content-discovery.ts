@@ -41,9 +41,15 @@ export class ContentDiscoveryService {
    * resolution is the slow/failure-prone step — see discovery-media.ts).
    */
   async browsePlatform(platform: "tiktok" | "facebook" | "youtube"): Promise<DiscoveryItem[]> {
-    if (platform === "tiktok") return this.crawlTikTokProfile();
-    if (platform === "facebook") return this.crawlFacebookVideos();
-    return this.crawlYouTubeSearch();
+    if (platform === "tiktok") {
+      // The artist's own profile is a small, fixed pool (yt-dlp only ever
+      // lists the same ~15 uploads) — it ran dry immediately, returning the
+      // exact same results every browse. Fan-content search adds real variety.
+      const [profileVideos, fanVideos] = await Promise.all([this.crawlTikTokProfile(), this.crawlTikTokFanSearch()]);
+      return this.shuffle(this.deduplicate([...profileVideos, ...fanVideos]));
+    }
+    if (platform === "facebook") return this.shuffle(this.deduplicate(await this.crawlFacebookVideos()));
+    return this.shuffle(this.deduplicate(await this.crawlYouTubeSearch()));
   }
 
   async discoverContent(bot: BotRecord, options?: { limit?: number }): Promise<DiscoveryItem[]> {
@@ -397,6 +403,50 @@ export class ContentDiscoveryService {
       relevanceScore: 92,
       tags: ["fan_engagement", "fan", "tiktok", "official"],
     }));
+  }
+
+  // The artist's own profile (crawlTikTokProfile) is a small fixed pool that
+  // exhausts fast. This finds fan reaction/duet/mention videos instead, same
+  // DuckDuckGo HTML-scrape pattern as Facebook/YouTube search below — gives
+  // the "Live" tab real variety instead of the same ~15 clips every time.
+  private async crawlTikTokFanSearch(): Promise<DiscoveryItem[]> {
+    const videoUrlPattern = /tiktok\.com\/@[\w.-]+\/video\/(\d+)/i;
+    const items: DiscoveryItem[] = [];
+    const seen = new Set<string>();
+
+    for (const query of [`site:tiktok.com "${this.artistName}"`, `site:tiktok.com "@${this.tiktokHandle}"`]) {
+      try {
+        const response = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
+          headers: { Accept: "text/html,application/xhtml+xml" },
+        });
+        if (!response.ok) continue;
+        const html = await response.text();
+        const matches = html.matchAll(/<a rel="nofollow" class="result__a" href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g);
+
+        for (const match of matches) {
+          const href = match[1];
+          const ddgMatch = href.match(/[?&]uddg=([^&]+)/);
+          const decoded = ddgMatch ? decodeURIComponent(ddgMatch[1]) : href;
+          if (!videoUrlPattern.test(decoded) || seen.has(decoded)) continue;
+          seen.add(decoded);
+
+          const title = this.stripHtml(match[2] ?? "").trim() || `${this.artistName} TikTok fan clip`;
+          items.push({
+            title,
+            description: `Fan TikTok video mentioning ${this.artistName} — ${title}`,
+            url: decoded,
+            source: "TikTok",
+            mediaType: "video",
+            relevanceScore: 80,
+            tags: ["fan_engagement", "fan", "tiktok"],
+          });
+        }
+      } catch {
+        // A failed search query just means fewer candidates this run.
+      }
+    }
+
+    return items;
   }
 
   // Facebook has no yt-dlp flat-playlist support (profile/reels index pages
