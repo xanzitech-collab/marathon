@@ -64,20 +64,33 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: "This video is too large to process. Try another item." }, { status: 422 });
     }
 
-    const contentType = response.headers.get("content-type") ?? "video/mp4";
+    const rawContentType = response.headers.get("content-type") ?? "";
     const arrayBuffer = await response.arrayBuffer();
     if (arrayBuffer.byteLength > MAX_BYTES) {
       return NextResponse.json({ error: "This video is too large to process. Try another item." }, { status: 422 });
     }
     const buffer = Buffer.from(arrayBuffer);
 
+    // The bot-media bucket only accepts a fixed allow-list of MIME types —
+    // CDNs (TikTok in particular) often send a generic/bogus content-type
+    // like "application/octet-stream; charset=UTF-8", which Supabase Storage
+    // rejects outright. Normalize to one of the allowed types instead of
+    // trusting the upstream header verbatim.
+    const isImage = rawContentType.startsWith("image/");
+    const mediaType: "image" | "video" = isImage ? "image" : "video";
+    const uploadContentType = isImage
+      ? rawContentType.includes("png")
+        ? "image/png"
+        : rawContentType.includes("webp")
+          ? "image/webp"
+          : "image/jpeg"
+      : "video/mp4";
+    const ext = uploadContentType.split("/")[1] === "jpeg" ? "jpg" : uploadContentType.split("/")[1];
     const admin = createAdminClient();
-    const ext = contentType.includes("mp4") ? "mp4" : contentType.includes("image") ? "jpg" : "mp4";
-    const mediaType: "image" | "video" = contentType.startsWith("image") ? "image" : "video";
     const storagePath = `${user.id}/${id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
 
     const { error: uploadError } = await admin.storage.from("bot-media").upload(storagePath, buffer, {
-      contentType,
+      contentType: uploadContentType,
       upsert: false,
     });
     if (uploadError) throw new Error(uploadError.message);
