@@ -233,11 +233,14 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
       `${input.queueItemId}:${input.botId}`,
       structureHints,
     );
-    // Scale to *cover* the target frame and center-crop the overflow, rather
-    // than fitting inside it and padding the remainder with black bars —
-    // letterboxing looked broken/unfinished (confirmed on real posted
-    // images). Matches how Reels/TikTok/Stories always fill the frame.
-    const videoFilter = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920";
+    // Cover+crop cut off too much of the subject on images that aren't close
+    // to 9:16 already. Instead: show the whole image uncropped ("fit"),
+    // centered over a blurred, cover-scaled copy of the same image filling
+    // the rest of the frame — no black bars, no cropped/zoomed subject.
+    const videoFilterComplex =
+      "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=20[bg];" +
+      "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];" +
+      "[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]";
 
     // Instagram's audio-recognition needs a decent continuous stretch of the
     // song to fingerprint-match it — a source clip shorter than this leaves
@@ -270,8 +273,12 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
             audioInputPath,
             "-t",
             String(maxDuration),
-            "-vf",
-            videoFilter,
+            "-filter_complex",
+            videoFilterComplex,
+            "-map",
+            "[outv]",
+            "-map",
+            "1:a:0",
             "-r",
             "30",
             "-c:v",
@@ -294,12 +301,12 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
           String(audioStartSeconds),
             "-i",
             audioInputPath,
+            "-filter_complex",
+            videoFilterComplex,
             "-map",
-            "0:v:0",
+            "[outv]",
             "-map",
             "1:a:0",
-            "-vf",
-            videoFilter,
             "-t",
             String(targetDuration),
             "-c:v",

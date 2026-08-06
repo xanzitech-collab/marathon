@@ -558,6 +558,7 @@ export async function publishNextQueuedItem(
   });
 
   let publishedPostId: string;
+  let publishWarning: string | null = null;
   try {
     const published = await xenrioClient.publish({
       targets: connectedTargets,
@@ -570,6 +571,18 @@ export async function publishNextQueuedItem(
 
     console.log(`[${id}] Xenrio response`, published);
     publishedPostId = published.postId;
+
+    const warnings: string[] = [];
+    if (published.skipped.length > 0) {
+      warnings.push(`Skipped (rate-limited): ${published.skipped.map((s) => `${s.platform} - ${s.reason}`).join("; ")}`);
+    }
+    if (published.failedPlatforms.length > 0) {
+      warnings.push(`Failed to post: ${published.failedPlatforms.map((p) => `${p.platform} - ${p.error}`).join("; ")}`);
+    }
+    if (warnings.length > 0) {
+      publishWarning = warnings.join(" | ");
+      console.warn(`[${id}] Partial publish failure: ${publishWarning}`);
+    }
   } catch (publishError) {
     const message = publishError instanceof Error ? publishError.message : "Unknown publish error";
     console.error(`[${id}] Xenrio publish failed:`, message);
@@ -627,7 +640,7 @@ export async function publishNextQueuedItem(
       generated_caption: finalCaption,
       provider_post_id: publishedPostId,
       published_at: new Date().toISOString(),
-      error_message: null,
+      error_message: publishWarning,
       metadata: enrichedMetadata,
     })
     .eq("id", item.id);
@@ -646,5 +659,5 @@ export async function publishNextQueuedItem(
       .eq("id", item.media_asset_id);
   }
 
-  return createPublishApiResult(true, { postId: publishedPostId });
+  return createPublishApiResult(true, { postId: publishedPostId, warning: publishWarning ?? undefined });
 }

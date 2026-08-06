@@ -79,6 +79,7 @@ interface CreatePostResponse {
   post?: {
     id?: string;
     _id?: string;
+    platforms?: Array<{ platform?: string; accountId?: string; status?: string; error?: string; platformPostUrl?: string }>;
   };
   data?: {
     id?: string;
@@ -87,6 +88,7 @@ interface CreatePostResponse {
       _id?: string;
       id?: string;
       status?: string;
+      platforms?: Array<{ platform?: string; accountId?: string; status?: string; error?: string; platformPostUrl?: string }>;
     };
   };
 }
@@ -153,6 +155,25 @@ export class XenrioClient {
     const data = obj.data;
     const dataKeys = data && typeof data === "object" ? Object.keys(data as Record<string, unknown>) : [];
     return `keys=${keys.join(",") || "none"}; dataKeys=${dataKeys.join(",") || "none"}`;
+  }
+
+  // A single throttled/blocked platform (e.g. a 429 rate limit) makes Zernio
+  // reject the WHOLE multi-platform post request — without this, one platform
+  // being rate-limited silently kills every other platform in the same post
+  // (confirmed live: a Facebook 429 took Instagram down with it in one call).
+  // Pull the offending platform out of the error body so the caller can drop
+  // just that target and retry with the rest instead of failing everything.
+  private static extractBlockedTargetFromError(errorMessage: string): { platform: string; reason: string } | undefined {
+    const jsonStart = errorMessage.indexOf("{");
+    if (jsonStart < 0) return undefined;
+    try {
+      const parsed = JSON.parse(errorMessage.slice(jsonStart)) as { error?: string; details?: { platform?: string } };
+      const platform = parsed.details?.platform;
+      if (!platform) return undefined;
+      return { platform, reason: parsed.error ?? errorMessage };
+    } catch {
+      return undefined;
+    }
   }
 
   private static readExistingProfileIdFromConflict(errorMessage: string): string | undefined {
@@ -278,69 +299,109 @@ export class XenrioClient {
     );
   }
 
-  async publish(input: XenrioPublishInput): Promise<{ postId: string }> {
+  async publish(input: XenrioPublishInput): Promise<{
+    postId: string;
+    skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string }>;
+    failedPlatforms: Array<{ platform: string; error: string }>;
+  }> {
     const content = input.caption;
     const inferredMediaType =
       input.mediaType ??
       (input.mediaUrl && /(\.mp4|\.mov|\.webm|\.m4v)(\?|$)/i.test(input.mediaUrl) ? "video" : "image");
 
-    const includesTikTok = input.targets.some((target) => target.platform === "tiktok");
-    // TikTok requires this block on every post. privacy_level should really
-    // come from TikTok's own creator-info API per account, but that's not
-    // wired up yet — default to public since these are public promo posts,
-    // same visibility as the Instagram/Facebook side of the same post.
-    const tiktokSettings = includesTikTok
-      ? {
-          privacy_level: "PUBLIC_TO_EVERYONE",
-          allow_comment: true,
-          allow_duet: true,
-          allow_stitch: true,
-          commercial_content_type: "none",
-          content_preview_confirmed: true,
-          express_consent_given: true,
-          media_type: inferredMediaType === "image" ? "photo" : "video",
-          auto_add_music: false,
-          video_made_with_ai: false,
+    let remainingTargets = [...input.targets];
+    const skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string }> = [];
+
+    // A single blocked/rate-limited platform makes Zernio reject the WHOLE
+    // multi-platform request — retry with just that target dropped instead of
+    // failing every other platform in the same post.
+    while (remainingTargets.length > 0) {
+      const includesTikTok = remainingTargets.some((target) => target.platform === "tiktok");
+      // TikTok requires this block on every post. privacy_level should really
+      // come from TikTok's own creator-info API per account, but that's not
+      // wired up yet — default to public since these are public promo posts,
+      // same visibility as the Instagram/Facebook side of the same post.
+      const tiktokSettings = includesTikTok
+        ? {
+            privacy_level: "PUBLIC_TO_EVERYONE",
+            allow_comment: true,
+            allow_duet: true,
+            allow_stitch: true,
+            commercial_content_type: "none",
+            content_preview_confirmed: true,
+            express_consent_given: true,
+            media_type: inferredMediaType === "image" ? "photo" : "video",
+            auto_add_music: false,
+            video_made_with_ai: false,
+          }
+        : undefined;
+
+      let payload: CreatePostResponse;
+      try {
+        payload = await this.request<CreatePostResponse>("/posts", {
+          method: "POST",
+          body: JSON.stringify({
+            content,
+            mediaUrl: input.mediaUrl,
+            mediaItems: input.mediaUrl
+              ? [
+                  {
+                    type: inferredMediaType,
+                    url: input.mediaUrl,
+                  },
+                ]
+              : undefined,
+            publishNow: true,
+            timezone: input.timezone,
+            platforms: remainingTargets.map((target) => ({
+              platform: target.platform,
+              accountId: target.accountId,
+            })),
+            ...(tiktokSettings ? { tiktokSettings } : {}),
+          }),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const blocked = XenrioClient.extractBlockedTargetFromError(message);
+        const blockedTarget = blocked ? remainingTargets.find((target) => target.platform === blocked.platform) : undefined;
+
+        if (blockedTarget && remainingTargets.length > 1) {
+          skipped.push({ platform: blockedTarget.platform, accountId: blockedTarget.accountId, reason: blocked!.reason });
+          remainingTargets = remainingTargets.filter((target) => target !== blockedTarget);
+          continue;
         }
-      : undefined;
+        throw error;
+      }
 
-    const payload = await this.request<CreatePostResponse>("/posts", {
-      method: "POST",
-      body: JSON.stringify({
-        content,
-        mediaUrl: input.mediaUrl,
-        mediaItems: input.mediaUrl
-          ? [
-              {
-                type: inferredMediaType,
-                url: input.mediaUrl,
-              },
-            ]
-          : undefined,
-        publishNow: true,
-        timezone: input.timezone,
-        platforms: input.targets.map((target) => ({
-          platform: target.platform,
-          accountId: target.accountId,
-        })),
-        ...(tiktokSettings ? { tiktokSettings } : {}),
-      }),
-    });
+      const postId = XenrioClient.pickFirstString(
+        payload.data?.post?._id,
+        payload.data?.post?.id,
+        payload.data?.postId,
+        payload.data?.id,
+        payload.post?._id,
+        payload.post?.id,
+        payload.postId,
+        payload.id,
+      );
+      if (!postId) {
+        throw new Error(`Zernio publish succeeded without post id (${XenrioClient.payloadShape(payload)})`);
+      }
 
-    const postId = XenrioClient.pickFirstString(
-      payload.data?.post?._id,
-      payload.data?.post?.id,
-      payload.data?.postId,
-      payload.data?.id,
-      payload.post?._id,
-      payload.post?.id,
-      payload.postId,
-      payload.id,
-    );
-    if (!postId) {
-      throw new Error(`Zernio publish succeeded without post id (${XenrioClient.payloadShape(payload)})`);
+      // The combined request can also succeed overall while individual
+      // platforms inside it fail — don't just trust the top-level post id
+      // (confirmed: a post reported as published never actually appeared on
+      // the destination Facebook Page).
+      const platformStatuses = payload.data?.post?.platforms ?? payload.post?.platforms ?? [];
+      const failedPlatforms = platformStatuses
+        .filter((p) => typeof p.status === "string" && /fail|error/i.test(p.status))
+        .map((p) => ({ platform: p.platform ?? "unknown", error: p.error ?? `status=${p.status}` }));
+
+      return { postId, skipped, failedPlatforms };
     }
-    return { postId };
+
+    throw new Error(
+      `All platform targets were blocked before publishing could succeed: ${skipped.map((s) => `${s.platform} (${s.reason})`).join("; ")}`,
+    );
   }
 
   async listAccountPosts(accountId: string): Promise<
