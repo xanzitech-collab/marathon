@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { MessageCircle, Pencil, Trash2 } from "lucide-react";
-import type { BotWithHealth, MediaAsset, QueueItem, Song } from "@/types/app";
+import type { BotWithHealth, ConnectablePlatform, MediaAsset, QueueItem, Song } from "@/types/app";
 import { CONTENT_TARGET_OPTIONS, FREQUENCY_OPTIONS, PERSONA_OPTIONS, WEEKDAYS } from "@/lib/config";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
@@ -55,8 +55,15 @@ interface PostComment {
   createdTime: string;
 }
 
+const PLATFORMS: ConnectablePlatform[] = ["instagram", "tiktok", "facebook"];
+const PLATFORM_LABELS: Record<ConnectablePlatform, string> = {
+  instagram: "Instagram",
+  tiktok: "TikTok",
+  facebook: "Facebook",
+};
+
 export function BotCard({ bot, onUpdated }: BotCardProps) {
-  const [expanded, setExpanded] = useState(() => !bot.health.instagramConnected);
+  const [expanded, setExpanded] = useState(() => !bot.health.anyPlatformConnected);
   const [tab, setTab] = useState<"voice" | "media" | "activity" | "posts">("voice");
   const [queueView, setQueueView] = useState<"all" | "failed">("all");
   const [posts, setPosts] = useState<LivePost[]>([]);
@@ -82,7 +89,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   const [missionLoading, setMissionLoading] = useState(false);
   const [automationLoading, setAutomationLoading] = useState(false);
   const [publishLoading, setPublishLoading] = useState(false);
-  const [instagramActionLoading, setInstagramActionLoading] = useState(false);
+  const [instagramActionLoading, setInstagramActionLoading] = useState<ConnectablePlatform | null>(null);
   const [queueActionMessage, setQueueActionMessage] = useState<string | null>(null);
   const [voiceSupported] = useState<boolean>(() => Boolean(getSpeechRecognitionCtor()));
   const [voiceListening, setVoiceListening] = useState(false);
@@ -178,12 +185,12 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
   const setupSteps = useMemo(
     () => [
-      { label: "Instagram connected", done: bot.health.instagramConnected },
+      { label: "A platform connected", done: bot.health.anyPlatformConnected },
       { label: "Publishing connection ready", done: bot.health.xenrioKeyConnected },
       { label: "Caption writer ready", done: bot.health.geminiKeyConnected },
       { label: "Channel turned on", done: form.is_active },
     ],
-    [bot.health.geminiKeyConnected, bot.health.instagramConnected, bot.health.xenrioKeyConnected, form.is_active],
+    [bot.health.anyPlatformConnected, bot.health.geminiKeyConnected, bot.health.xenrioKeyConnected, form.is_active],
   );
 
   const updateBot = async () => {
@@ -212,24 +219,24 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     }
   };
 
-  const connectInstagram = async () => {
-    setInstagramActionLoading(true);
-    window.location.href = `/api/bots/${bot.id}/connect?mode=start`;
+  const connectInstagram = async (platform: ConnectablePlatform) => {
+    setInstagramActionLoading(platform);
+    window.location.assign(`/api/bots/${bot.id}/connect?mode=start&platform=${platform}`);
   };
 
-  const disconnectInstagram = async () => {
-    setInstagramActionLoading(true);
+  const disconnectInstagram = async (platform: ConnectablePlatform) => {
+    setInstagramActionLoading(platform);
     setQueueActionMessage(null);
     try {
-      const result = await safeFetchJson<{ error?: string }>(`/api/bots/${bot.id}/connect`, { method: "DELETE" });
+      const result = await safeFetchJson<{ error?: string }>(`/api/bots/${bot.id}/connect?platform=${platform}`, { method: "DELETE" });
       if (!result.ok) {
-        setQueueActionMessage(result.error || "Couldn't disconnect Instagram.");
+        setQueueActionMessage(result.error || `Couldn't disconnect ${PLATFORM_LABELS[platform]}.`);
         return;
       }
-      setQueueActionMessage("Instagram disconnected.");
+      setQueueActionMessage(`${PLATFORM_LABELS[platform]} disconnected.`);
       await onUpdated();
     } finally {
-      setInstagramActionLoading(false);
+      setInstagramActionLoading(null);
     }
   };
 
@@ -447,7 +454,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     await loadQueue();
   };
 
-  const isLive = bot.is_active && bot.health.instagramConnected && bot.health.isReady;
+  const isLive = bot.is_active && bot.health.anyPlatformConnected && bot.health.isReady;
   const postedItems = useMemo(() => queue.filter((item) => item.status === "posted"), [queue]);
   const recentPostedItems = useMemo(() => postedItems.slice(0, 3), [postedItems]);
 
@@ -662,14 +669,6 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                   >
                     {form.is_active ? "Channel is on" : "Channel is off"}
                   </button>
-                  <button onClick={connectInstagram} disabled={instagramActionLoading} className="btn-secondary">
-                    {instagramActionLoading ? "Working…" : bot.health.instagramConnected ? "Reconnect Instagram" : "Connect Instagram"}
-                  </button>
-                  {bot.health.instagramConnected && (
-                    <button onClick={disconnectInstagram} disabled={instagramActionLoading} className="btn-secondary text-alert">
-                      {instagramActionLoading ? "Working…" : "Disconnect Instagram"}
-                    </button>
-                  )}
                   <button onClick={updateBot} disabled={saving} className="btn-primary">
                     {saving ? "Saving…" : "Save"}
                   </button>
@@ -678,9 +677,42 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                 {voiceError && <p className="mt-2 text-xs text-signal">{voiceError}</p>}
               </div>
 
+              <div className="md:col-span-2 rounded-xl border border-border/60 p-3">
+                <p className="mb-2 text-xs uppercase tracking-wide text-faded">Publishing platforms</p>
+                <p className="mb-3 text-xs text-faded">
+                  Connect one or more — when this channel posts, it publishes to every connected platform at once.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {PLATFORMS.map((platform) => {
+                    const connected = bot.health.connectedPlatforms.includes(platform);
+                    const busy = instagramActionLoading === platform;
+                    return (
+                      <div key={platform} className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5">
+                        <span className={`tally ${connected ? "tally-live" : "tally-off"}`} />
+                        <span className="text-xs text-ink">{PLATFORM_LABELS[platform]}</span>
+                        <button
+                          onClick={() => (connected ? disconnectInstagram(platform) : connectInstagram(platform))}
+                          disabled={busy}
+                          className={`ml-1 text-xs ${connected ? "text-alert hover:underline" : "text-signal hover:underline"}`}
+                        >
+                          {busy ? "Working…" : connected ? "Disconnect" : "Connect"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="md:col-span-2 rounded-xl border border-border/60 p-3 font-data text-xs text-faded">
                 <p className="break-all">Profile: {bot.zernio_profile_id || "not linked"}</p>
-                <p className="break-all">Instagram account: {bot.zernio_account_id || "not synced"}</p>
+                {PLATFORMS.map((platform) => {
+                  const account = bot.platformAccounts?.find((a) => a.platform === platform);
+                  return (
+                    <p key={platform} className="break-all">
+                      {PLATFORM_LABELS[platform]} account: {account ? (account.username || account.zernio_account_id) : "not synced"}
+                    </p>
+                  );
+                })}
               </div>
             </div>
           )}

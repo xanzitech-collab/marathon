@@ -12,6 +12,8 @@ import { prepareMemeImageForPublish } from "@/lib/meme-image";
 import { prepareGenericImageForPublish } from "@/lib/image-prepare";
 import { isFocusAligned, isKnownWrapperSource } from "@/lib/content-guard";
 import { createPublishApiError, createPublishApiResult, type PublishApiResult } from "@/lib/publish-response";
+import { listPlatformAccounts } from "@/lib/platform-accounts";
+import type { XenrioPublishTarget } from "@/lib/xenrio/client";
 
 type BotRow = Database["public"]["Tables"]["bots"]["Row"];
 
@@ -201,16 +203,27 @@ export async function publishNextQueuedItem(
   const isMemeImagePost = isMemePost && mediaType === "image";
 
   const accountId = bot.zernio_account_id ?? bot.instagram_business_id;
-  if (!accountId) {
+  const platformAccounts = await listPlatformAccounts(supabase, id);
+  const connectedTargets: XenrioPublishTarget[] = platformAccounts
+    .filter((account) => account.connection_status === "connected")
+    .map((account) => ({ platform: account.platform, accountId: account.zernio_account_id }));
+
+  // Back-compat: bots connected before multi-platform support only have the
+  // legacy single Instagram account column, not a bot_platform_accounts row yet.
+  if (connectedTargets.length === 0 && accountId) {
+    connectedTargets.push({ platform: "instagram", accountId });
+  }
+
+  if (connectedTargets.length === 0) {
     await supabase
       .from("content_queue")
       .update({
         status: "failed",
-        error_message: "Instagram account not synced from Zernio",
+        error_message: "No connected platform accounts synced from Zernio",
       })
       .eq("id", item.id);
 
-    return createPublishApiError("Instagram account not synced from Zernio");
+    return createPublishApiError("No connected platform accounts synced from Zernio");
   }
 
   if (!resolvedMediaUrl) {
@@ -222,7 +235,7 @@ export async function publishNextQueuedItem(
       })
       .eq("id", item.id);
 
-    return createPublishApiError("Media URL required for Instagram posts", 400);
+    return createPublishApiError("Media URL required to publish", 400);
   }
 
   if (!bot.timezone) {
@@ -529,7 +542,7 @@ export async function publishNextQueuedItem(
   if (queueUpdateError) throw queueUpdateError;
 
   console.log(`[${id}] Publishing to Zernio`, {
-    accountId,
+    targets: connectedTargets,
     surface: item.surface,
     timezone: bot.timezone || "UTC",
     mediaUrl: publishMediaUrl,
@@ -539,7 +552,7 @@ export async function publishNextQueuedItem(
   let publishedPostId: string;
   try {
     const published = await xenrioClient.publish({
-      accountId,
+      targets: connectedTargets,
       caption: finalCaption,
       surface: item.surface,
       mediaUrl: publishMediaUrl,

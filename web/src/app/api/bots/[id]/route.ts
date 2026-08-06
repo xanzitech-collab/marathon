@@ -3,6 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { botUpdateSchema } from "@/lib/validators";
 import { computeBotHealth } from "@/lib/bot-health";
 import { isFocusAligned } from "@/lib/content-guard";
+import { listPlatformAccounts } from "@/lib/platform-accounts";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -22,7 +23,8 @@ export async function GET(_: Request, { params }: Params) {
 
     if (error) throw error;
 
-    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data) } });
+    const platformAccounts = await listPlatformAccounts(supabase, id);
+    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data, platformAccounts), platformAccounts } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Not found" }, { status: 404 });
   }
@@ -96,7 +98,7 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     }
 
-    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data) } });
+    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data, await listPlatformAccounts(supabase, id)) } });
   } catch (error) {
     const maybeDbError = error as { code?: string; message?: string };
     const message = error instanceof Error ? error.message : "Failed to update";

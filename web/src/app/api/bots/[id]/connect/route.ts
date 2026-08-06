@@ -4,9 +4,12 @@ import { requireUser } from "@/lib/auth";
 import { computeBotHealth } from "@/lib/bot-health";
 import { getApiKeysBySlot } from "@/lib/config";
 import { XenrioClient } from "@/lib/xenrio/client";
+import { isConnectablePlatform, listPlatformAccounts } from "@/lib/platform-accounts";
+import type { ConnectablePlatform } from "@/types/app";
 
 const connectSchema = z.object({
   mode: z.enum(["start", "sync", "manual"]).default("start"),
+  platform: z.enum(["instagram", "tiktok", "facebook"]).default("instagram"),
   instagram_business_id: z.string().min(4).optional(),
   instagram_username: z.string().min(2).optional(),
   instagram_page_id: z.string().min(4).optional(),
@@ -17,11 +20,12 @@ interface Params {
   params: Promise<{ id: string }>;
 }
 
-function isInstagramPlatform(platform?: string) {
-  return (platform ?? "").toLowerCase() === "instagram";
+function parsePlatform(value: string | null): ConnectablePlatform {
+  if (value && isConnectablePlatform(value)) return value;
+  return "instagram";
 }
 
-async function startConnectFlow(id: string) {
+async function startConnectFlow(id: string, platform: ConnectablePlatform) {
   const { supabase, user } = await requireUser();
 
   const { data: bot, error: botError } = await supabase
@@ -54,16 +58,19 @@ async function startConnectFlow(id: string) {
   }
 
   const callbackUrl = `${appUrl}/api/zernio/callback?botId=${encodeURIComponent(bot.id)}`;
-  const state = `${bot.id}:${user.id}`;
+  // Platform travels in state (colon-separated) so the callback knows which
+  // platform this OAuth round-trip was for — one profile connects to all
+  // three platforms independently, each with its own connect/callback pass.
+  const state = `${bot.id}:${user.id}:${platform}`;
 
-  const { authUrl } = await zernioClient.getConnectUrl("instagram", profileId, {
+  const { authUrl } = await zernioClient.getConnectUrl(platform, profileId, {
     redirectUri: callbackUrl,
     state,
   });
 
   const { data: updated, error: updateError } = await supabase
     .from("bots")
-    .update({ zernio_profile_id: profileId, connection_status: "disconnected" })
+    .update({ zernio_profile_id: profileId })
     .eq("id", id)
     .eq("user_id", user.id)
     .select("*")
@@ -71,9 +78,11 @@ async function startConnectFlow(id: string) {
 
   if (updateError) throw updateError;
 
+  const platformAccounts = await listPlatformAccounts(supabase, id);
+
   return {
     authUrl,
-    bot: { ...updated, health: computeBotHealth(updated) },
+    bot: { ...updated, health: computeBotHealth(updated, platformAccounts), platformAccounts },
   };
 }
 
@@ -82,12 +91,13 @@ export async function GET(request: Request, { params }: Params) {
     const { id } = await params;
     const url = new URL(request.url);
     const mode = url.searchParams.get("mode") ?? "start";
+    const platform = parsePlatform(url.searchParams.get("platform"));
 
     if (mode !== "start") {
       return NextResponse.json({ error: "GET supports only mode=start" }, { status: 400 });
     }
 
-    const started = await startConnectFlow(id);
+    const started = await startConnectFlow(id, platform);
     if (started instanceof NextResponse) {
       return started;
     }
@@ -101,20 +111,37 @@ export async function GET(request: Request, { params }: Params) {
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id } = await params;
+    const url = new URL(request.url);
+    const platform = parsePlatform(url.searchParams.get("platform"));
     const { supabase, user } = await requireUser();
 
-    // Unlink the Instagram account but keep zernio_profile_id — the Zernio
-    // profile is just a container tied to this channel, not the specific IG
-    // account, so reconnecting shouldn't need to recreate it.
+    const { data: bot, error: botError } = await supabase
+      .from("bots")
+      .select("id")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+    if (botError || !bot) {
+      return NextResponse.json({ error: "Bot not found" }, { status: 404 });
+    }
+
+    const { error: deleteError } = await supabase
+      .from("bot_platform_accounts")
+      .delete()
+      .eq("bot_id", id)
+      .eq("platform", platform);
+    if (deleteError) throw deleteError;
+
+    // Keep the legacy single-account columns in sync for Instagram so any
+    // code still reading them directly (posts tab, etc.) doesn't go stale.
+    const legacyUpdate =
+      platform === "instagram"
+        ? { zernio_account_id: null, instagram_business_id: null, instagram_page_id: null, instagram_username: null }
+        : {};
+
     const { data, error } = await supabase
       .from("bots")
-      .update({
-        zernio_account_id: null,
-        instagram_business_id: null,
-        instagram_page_id: null,
-        instagram_username: null,
-        connection_status: "disconnected",
-      })
+      .update({ ...legacyUpdate, connection_status: "disconnected" })
       .eq("id", id)
       .eq("user_id", user.id)
       .select("*")
@@ -124,7 +151,8 @@ export async function DELETE(request: Request, { params }: Params) {
       return NextResponse.json({ error: error?.message ?? "Bot not found" }, { status: 404 });
     }
 
-    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data) } });
+    const platformAccounts = await listPlatformAccounts(supabase, id);
+    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data, platformAccounts), platformAccounts } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to disconnect" }, { status: 500 });
   }
@@ -154,9 +182,10 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const payload = parsed.data;
+    const platform = payload.platform;
 
     if (payload.mode === "start") {
-      const started = await startConnectFlow(id);
+      const started = await startConnectFlow(id, platform);
       if (started instanceof NextResponse) {
         return started;
       }
@@ -172,29 +201,47 @@ export async function POST(request: Request, { params }: Params) {
       const { xenrio } = getApiKeysBySlot(bot.api_slot);
       const zernioClient = new XenrioClient(xenrio);
       const accounts = await zernioClient.listAccounts();
-      const instagramAccounts = accounts.filter((account) => isInstagramPlatform(account.platform));
+      const platformAccountsFromZernio = accounts.filter((account) => account.platform.toLowerCase() === platform);
 
       const selected = payload.zernio_account_id
-        ? instagramAccounts.find((a) => a.id === payload.zernio_account_id)
+        ? platformAccountsFromZernio.find((a) => a.id === payload.zernio_account_id)
         : (bot.zernio_profile_id
-          ? instagramAccounts.find((a) => a.profileId === bot.zernio_profile_id)
-          : undefined) ?? instagramAccounts[0];
+          ? platformAccountsFromZernio.find((a) => a.profileId === bot.zernio_profile_id)
+          : undefined) ?? platformAccountsFromZernio[0];
 
       if (!selected) {
         return NextResponse.json(
-          { error: "No Instagram account found in Zernio for this bot/profile. Complete OAuth first." },
+          { error: `No ${platform} account found in Zernio for this bot/profile. Complete OAuth first.` },
           { status: 400 },
         );
       }
 
+      const { error: upsertError } = await supabase
+        .from("bot_platform_accounts")
+        .upsert(
+          {
+            bot_id: id,
+            platform,
+            zernio_account_id: selected.id,
+            username: selected.username ?? null,
+            connection_status: "connected",
+          },
+          { onConflict: "bot_id,platform" },
+        );
+      if (upsertError) throw upsertError;
+
+      const legacyUpdate =
+        platform === "instagram"
+          ? {
+              zernio_account_id: selected.id,
+              instagram_business_id: selected.id,
+              instagram_username: payload.instagram_username ?? selected.username ?? bot.instagram_username,
+            }
+          : {};
+
       const { data: updated, error: updateError } = await supabase
         .from("bots")
-        .update({
-          zernio_account_id: selected.id,
-          instagram_business_id: selected.id,
-          instagram_username: payload.instagram_username ?? selected.username ?? bot.instagram_username,
-          connection_status: "connected",
-        })
+        .update({ ...legacyUpdate, connection_status: "connected" })
         .eq("id", id)
         .eq("user_id", user.id)
         .select("*")
@@ -202,8 +249,10 @@ export async function POST(request: Request, { params }: Params) {
 
       if (updateError) throw updateError;
 
+      const platformAccounts = await listPlatformAccounts(supabase, id);
+
       return NextResponse.json({
-        bot: { ...updated, health: computeBotHealth(updated) },
+        bot: { ...updated, health: computeBotHealth(updated, platformAccounts), platformAccounts },
         connectedAccount: selected,
       });
     }
@@ -214,6 +263,20 @@ export async function POST(request: Request, { params }: Params) {
         { status: 400 },
       );
     }
+
+    const { error: manualUpsertError } = await supabase
+      .from("bot_platform_accounts")
+      .upsert(
+        {
+          bot_id: id,
+          platform: "instagram",
+          zernio_account_id: payload.instagram_business_id,
+          username: payload.instagram_username,
+          connection_status: "connected",
+        },
+        { onConflict: "bot_id,platform" },
+      );
+    if (manualUpsertError) throw manualUpsertError;
 
     const { data, error } = await supabase
       .from("bots")
@@ -231,7 +294,8 @@ export async function POST(request: Request, { params }: Params) {
 
     if (error) throw error;
 
-    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data) } });
+    const platformAccounts = await listPlatformAccounts(supabase, id);
+    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data, platformAccounts), platformAccounts } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to connect" }, { status: 500 });
   }

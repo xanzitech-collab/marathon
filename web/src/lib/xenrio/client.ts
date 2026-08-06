@@ -1,5 +1,12 @@
-export interface XenrioPublishInput {
+export type XenrioPlatform = "instagram" | "tiktok" | "facebook";
+
+export interface XenrioPublishTarget {
+  platform: XenrioPlatform;
   accountId: string;
+}
+
+export interface XenrioPublishInput {
+  targets: XenrioPublishTarget[];
   caption: string;
   surface: "feed" | "reel" | "story";
   mediaUrl?: string;
@@ -196,7 +203,7 @@ export class XenrioClient {
   }
 
   async getConnectUrl(
-    platform: "instagram",
+    platform: XenrioPlatform,
     profileId: string,
     options?: { redirectUri?: string; state?: string },
   ): Promise<{ authUrl: string }> {
@@ -266,6 +273,26 @@ export class XenrioClient {
       input.mediaType ??
       (input.mediaUrl && /(\.mp4|\.mov|\.webm|\.m4v)(\?|$)/i.test(input.mediaUrl) ? "video" : "image");
 
+    const includesTikTok = input.targets.some((target) => target.platform === "tiktok");
+    // TikTok requires this block on every post. privacy_level should really
+    // come from TikTok's own creator-info API per account, but that's not
+    // wired up yet — default to public since these are public promo posts,
+    // same visibility as the Instagram/Facebook side of the same post.
+    const tiktokSettings = includesTikTok
+      ? {
+          privacy_level: "PUBLIC_TO_EVERYONE",
+          allow_comment: true,
+          allow_duet: true,
+          allow_stitch: true,
+          commercial_content_type: "none",
+          content_preview_confirmed: true,
+          express_consent_given: true,
+          media_type: inferredMediaType === "image" ? "photo" : "video",
+          auto_add_music: false,
+          video_made_with_ai: false,
+        }
+      : undefined;
+
     const payload = await this.request<CreatePostResponse>("/posts", {
       method: "POST",
       body: JSON.stringify({
@@ -281,12 +308,11 @@ export class XenrioClient {
           : undefined,
         publishNow: true,
         timezone: input.timezone,
-        platforms: [
-          {
-            platform: "instagram",
-            accountId: input.accountId,
-          },
-        ],
+        platforms: input.targets.map((target) => ({
+          platform: target.platform,
+          accountId: target.accountId,
+        })),
+        ...(tiktokSettings ? { tiktokSettings } : {}),
       }),
     });
 

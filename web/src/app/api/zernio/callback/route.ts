@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { AppError, requireUser } from "@/lib/auth";
 import { XenrioClient } from "@/lib/xenrio/client";
 import { getApiKeysBySlot } from "@/lib/config";
+import { isConnectablePlatform } from "@/lib/platform-accounts";
+import type { ConnectablePlatform } from "@/types/app";
 
 function dashboardRedirect(url: URL, params: Record<string, string>) {
   const redirectUrl = new URL("/dashboard", url.origin);
@@ -11,15 +13,12 @@ function dashboardRedirect(url: URL, params: Record<string, string>) {
   return NextResponse.redirect(redirectUrl);
 }
 
-function isInstagramPlatform(platform?: string) {
-  return (platform ?? "").toLowerCase() === "instagram";
-}
-
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const state = url.searchParams.get("state") ?? "";
-  const [botIdFromState] = state.split(":");
+  const [botIdFromState, , platformFromState] = state.split(":");
   const botId = botIdFromState || url.searchParams.get("botId") || "";
+  const platform: ConnectablePlatform = isConnectablePlatform(platformFromState ?? "") ? (platformFromState as ConnectablePlatform) : "instagram";
   const callbackAccountId = url.searchParams.get("accountId") ?? url.searchParams.get("account_id") ?? "";
   const callbackProfileId = url.searchParams.get("profileId") ?? url.searchParams.get("profile_id") ?? "";
   const callbackUsername = url.searchParams.get("username") ?? "";
@@ -58,29 +57,49 @@ export async function GET(request: Request) {
     const { xenrio } = getApiKeysBySlot(bot.api_slot);
     const zernioClient = new XenrioClient(xenrio);
     const accounts = await zernioClient.listAccounts();
-    const instagramAccounts = accounts.filter((account) => isInstagramPlatform(account.platform));
+    const platformAccounts = accounts.filter((account) => account.platform.toLowerCase() === platform);
 
     const selected =
-      (callbackAccountId ? instagramAccounts.find((account) => account.id === callbackAccountId) : undefined) ??
+      (callbackAccountId ? platformAccounts.find((account) => account.id === callbackAccountId) : undefined) ??
       (callbackProfileId
-        ? instagramAccounts.find((account) => account.profileId === callbackProfileId)
+        ? platformAccounts.find((account) => account.profileId === callbackProfileId)
         : undefined) ??
       (bot.zernio_profile_id
-        ? instagramAccounts.find((account) => account.profileId === bot.zernio_profile_id)
+        ? platformAccounts.find((account) => account.profileId === bot.zernio_profile_id)
         : undefined) ??
-      instagramAccounts[0];
+      platformAccounts[0];
 
     if (!selected) {
-      await supabase.from("bots").update({ connection_status: "error" }).eq("id", bot.id);
-      return dashboardRedirect(url, { connectError: "instagram_account_not_found" });
+      return dashboardRedirect(url, { connectError: `${platform}_account_not_found` });
     }
+
+    const { error: upsertError } = await supabase
+      .from("bot_platform_accounts")
+      .upsert(
+        {
+          bot_id: bot.id,
+          platform,
+          zernio_account_id: selected.id,
+          username: selected.username ?? callbackUsername ?? null,
+          connection_status: "connected",
+        },
+        { onConflict: "bot_id,platform" },
+      );
+    if (upsertError) throw upsertError;
+
+    const legacyUpdate =
+      platform === "instagram"
+        ? {
+            zernio_account_id: selected.id,
+            instagram_business_id: selected.id,
+            instagram_username: selected.username ?? callbackUsername ?? bot.instagram_username,
+          }
+        : {};
 
     const { error: updateError } = await supabase
       .from("bots")
       .update({
-        zernio_account_id: selected.id,
-        instagram_business_id: selected.id,
-        instagram_username: selected.username ?? callbackUsername ?? bot.instagram_username,
+        ...legacyUpdate,
         zernio_profile_id: selected.profileId ?? callbackProfileId ?? bot.zernio_profile_id,
         connection_status: "connected",
       })
@@ -89,9 +108,9 @@ export async function GET(request: Request) {
 
     if (updateError) throw updateError;
 
-    return dashboardRedirect(url, { connectedBot: bot.id, zernioSynced: "1" });
+    return dashboardRedirect(url, { connectedBot: bot.id, zernioSynced: "1", connectedPlatform: platform });
   } catch {
-    await supabase.from("bots").update({ connection_status: "error" }).eq("id", bot.id);
     return dashboardRedirect(url, { connectError: "sync_failed" });
   }
 }
+

@@ -4,6 +4,7 @@ import { AppError, requireUser } from "@/lib/auth";
 import { computeBotHealth } from "@/lib/bot-health";
 import { getApiKeysBySlot } from "@/lib/config";
 import { XenrioClient } from "@/lib/xenrio/client";
+import { listPlatformAccounts } from "@/lib/platform-accounts";
 
 export async function GET() {
   try {
@@ -19,23 +20,26 @@ export async function GET() {
 
     const bots = await Promise.all(
       (data ?? []).map(async (bot) => {
+        const platformAccounts = await listPlatformAccounts(supabase, bot.id);
         let externalPostCount: number | null = null;
 
-        // Best-effort: show the real live count from Instagram (via Zernio)
-        // instead of our own all-time queue history, which doesn't know
-        // about posts the user deleted directly on Instagram.
-        if (bot.connection_status === "connected" && bot.zernio_account_id) {
+        // Best-effort: show the real live count from connected platforms (via
+        // Zernio) instead of our own all-time queue history, which doesn't
+        // know about posts the user deleted directly on the platform.
+        if (platformAccounts.length > 0) {
           try {
             const { xenrio } = getApiKeysBySlot(bot.api_slot);
             const accounts = await new XenrioClient(xenrio).listAccounts();
-            const account = accounts.find((a) => a.id === bot.zernio_account_id);
-            externalPostCount = account?.externalPostCount ?? null;
+            externalPostCount = platformAccounts.reduce((sum, platformAccount) => {
+              const account = accounts.find((a) => a.id === platformAccount.zernio_account_id);
+              return sum + (account?.externalPostCount ?? 0);
+            }, 0);
           } catch (syncError) {
             console.warn(`[${bot.id}] Could not fetch live post count: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
           }
         }
 
-        return { ...bot, health: computeBotHealth(bot), externalPostCount };
+        return { ...bot, health: computeBotHealth(bot, platformAccounts), platformAccounts, externalPostCount };
       }),
     );
 
@@ -80,7 +84,7 @@ export async function POST(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data) } }, { status: 201 });
+    return NextResponse.json({ bot: { ...data, health: computeBotHealth(data, []) } }, { status: 201 });
   } catch (error) {
     const status = error instanceof AppError ? error.status : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to create bot" }, { status });

@@ -40,6 +40,24 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["bots"]["Row"]>;
       };
+      bot_platform_accounts: {
+        Row: {
+          id: string;
+          bot_id: string;
+          platform: "instagram" | "tiktok" | "facebook";
+          zernio_account_id: string;
+          username: string | null;
+          connection_status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["bot_platform_accounts"]["Row"]> & {
+          bot_id: string;
+          platform: "instagram" | "tiktok" | "facebook";
+          zernio_account_id: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["bot_platform_accounts"]["Row"]>;
+      };
       media_assets: {
         Row: {
           id: string;
