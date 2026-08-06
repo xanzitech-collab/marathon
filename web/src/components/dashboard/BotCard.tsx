@@ -490,10 +490,10 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   return (
     <article className="rounded-2xl border border-border bg-surface">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <span className={`tally ${isLive ? "tally-live" : bot.health.isReady ? "tally-signal" : "tally-off"}`} />
-          <div>
-            <h3 className="text-base font-medium text-ink">{bot.name}</h3>
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-medium text-ink">{bot.name}</h3>
             <p className="font-data text-xs text-faded">
               CH.{String(bot.api_slot).padStart(2, "0")} · {bot.city || "No city set"}, {bot.country || "No country set"}
             </p>
@@ -513,9 +513,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
       <div className="grid grid-cols-2 gap-2 px-4 pb-4 sm:px-5 md:grid-cols-4">
         {setupSteps.map((step) => (
-          <div key={step.label} className="flex items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
-            <span className={`tally ${step.done ? "tally-live" : "tally-off"}`} />
-            <span className="text-xs text-faded">{step.label}</span>
+          <div key={step.label} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
+            <span className={`tally shrink-0 ${step.done ? "tally-live" : "tally-off"}`} />
+            <span className="truncate text-xs text-faded">{step.label}</span>
           </div>
         ))}
       </div>
@@ -679,8 +679,8 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
               </div>
 
               <div className="md:col-span-2 rounded-xl border border-border/60 p-3 font-data text-xs text-faded">
-                <p>Profile: {bot.zernio_profile_id || "not linked"}</p>
-                <p>Instagram account: {bot.zernio_account_id || "not synced"}</p>
+                <p className="break-all">Profile: {bot.zernio_profile_id || "not linked"}</p>
+                <p className="break-all">Instagram account: {bot.zernio_account_id || "not synced"}</p>
               </div>
             </div>
           )}

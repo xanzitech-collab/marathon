@@ -379,13 +379,13 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                   <div key={cat.category} className="mb-2 rounded-lg border border-border">
                     <button
                       onClick={() => void toggleCategory(cat.category)}
-                      className="flex w-full items-center justify-between px-3 py-2 text-left text-sm text-ink"
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink"
                     >
-                      <span className="flex items-center gap-2">
+                      <span className="flex min-w-0 items-center gap-2">
                         {expanded.has(cat.category) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        {cat.category}
+                        <span className="truncate">{cat.category}</span>
                       </span>
-                      <span className="font-data text-[11px] text-faded">
+                      <span className="shrink-0 font-data text-[11px] text-faded">
                         {cat.images} img · {cat.videos} vid
                       </span>
                     </button>

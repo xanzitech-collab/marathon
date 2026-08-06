@@ -30,6 +30,11 @@ body {
   color: var(--ink);
   font-family: var(--font-body), sans-serif;
   overflow-x: hidden;
+  /* Long unbroken strings (ids, hashes, urls) otherwise force their own
+     min-content width past the viewport regardless of flex/grid sizing —
+     this is inherited so it fixes it everywhere without per-element fixes. */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 html {
