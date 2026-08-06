@@ -72,3 +72,35 @@ export async function DELETE(request: Request, { params }: Params) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+export async function PATCH(request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    const { supabase, user } = await requireUser();
+
+    const { data: bot, error: botError } = await supabase
+      .from("bots")
+      .select("id,api_slot")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+
+    if (botError || !bot) throw new Error("Bot not found");
+
+    const body = await request.json();
+    const postId = typeof body.postId === "string" ? body.postId : null;
+    const caption = typeof body.caption === "string" ? body.caption : null;
+    if (!postId || caption === null) {
+      return NextResponse.json({ error: "postId and caption are required" }, { status: 400 });
+    }
+
+    const { xenrio } = getApiKeysBySlot(bot.api_slot);
+    await new XenrioClient(xenrio).updatePostCaption(postId, caption);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update post";
+    console.error("[posts] PATCH failed:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

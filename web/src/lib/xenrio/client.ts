@@ -347,4 +347,77 @@ export class XenrioClient {
   async deletePost(postId: string): Promise<void> {
     await this.request(`/posts/${postId}`, { method: "DELETE" });
   }
+
+  async updatePostCaption(postId: string, caption: string): Promise<void> {
+    await this.request(`/posts/${postId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ content: caption }),
+    });
+  }
+
+  async listComments(postId: string): Promise<Array<{ id: string; message: string; from?: string; createdTime: string }>> {
+    const payload = await this.request<{
+      comments?: Array<{
+        id?: string;
+        _id?: string;
+        message?: string;
+        text?: string;
+        from?: string | { name?: string; username?: string };
+        createdTime?: string;
+        created_time?: string;
+      }>;
+      data?: {
+        comments?: Array<{
+          id?: string;
+          _id?: string;
+          message?: string;
+          text?: string;
+          from?: string | { name?: string; username?: string };
+          createdTime?: string;
+          created_time?: string;
+        }>;
+      };
+    }>(`/posts/${postId}/comments`, { method: "GET" });
+
+    const comments = payload.data?.comments ?? payload.comments ?? [];
+    return comments.reduce<Array<{ id: string; message: string; from?: string; createdTime: string }>>((acc, comment) => {
+      const id = XenrioClient.pickFirstString(comment.id, comment._id);
+      if (!id) return acc;
+      const from = typeof comment.from === "string" ? comment.from : comment.from?.name ?? comment.from?.username;
+      acc.push({
+        id,
+        message: comment.message ?? comment.text ?? "",
+        from,
+        createdTime: comment.createdTime ?? comment.created_time ?? new Date().toISOString(),
+      });
+      return acc;
+    }, []);
+  }
+
+  async createComment(postId: string, message: string): Promise<{ id: string }> {
+    const payload = await this.request<{
+      id?: string;
+      commentId?: string;
+      comment?: { id?: string; _id?: string };
+      data?: { id?: string; commentId?: string; comment?: { id?: string; _id?: string } };
+    }>(`/posts/${postId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+
+    const id = XenrioClient.pickFirstString(
+      payload.data?.comment?._id,
+      payload.data?.comment?.id,
+      payload.data?.commentId,
+      payload.data?.id,
+      payload.comment?._id,
+      payload.comment?.id,
+      payload.commentId,
+      payload.id,
+    );
+    if (!id) {
+      throw new Error(`Zernio comment succeeded without an id (${XenrioClient.payloadShape(payload)})`);
+    }
+    return { id };
+  }
 }

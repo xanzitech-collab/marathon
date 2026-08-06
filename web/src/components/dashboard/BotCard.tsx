@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Trash2 } from "lucide-react";
+import { MessageCircle, Pencil, Trash2 } from "lucide-react";
 import type { BotWithHealth, MediaAsset, QueueItem, Song } from "@/types/app";
 import { CONTENT_TARGET_OPTIONS, FREQUENCY_OPTIONS, PERSONA_OPTIONS, WEEKDAYS } from "@/lib/config";
 import { safeFetchJson } from "@/lib/safe-fetch";
@@ -48,6 +48,13 @@ interface LivePost {
   commentCount: number;
 }
 
+interface PostComment {
+  id: string;
+  message: string;
+  from?: string;
+  createdTime: string;
+}
+
 export function BotCard({ bot, onUpdated }: BotCardProps) {
   const [expanded, setExpanded] = useState(() => !bot.health.instagramConnected);
   const [tab, setTab] = useState<"voice" | "media" | "activity" | "posts">("voice");
@@ -56,6 +63,16 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   const [postsLoading, setPostsLoading] = useState(false);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editCaptionText, setEditCaptionText] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [commentsOpenFor, setCommentsOpenFor] = useState<string | null>(null);
+  const [commentsByPost, setCommentsByPost] = useState<Record<string, PostComment[]>>({});
+  const [commentsLoading, setCommentsLoading] = useState<string | null>(null);
+  const [commentsError, setCommentsError] = useState<string | null>(null);
+  const [newCommentText, setNewCommentText] = useState<Record<string, string>>({});
+  const [commentPosting, setCommentPosting] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaAsset[]>([]);
@@ -321,6 +338,76 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
       return;
     }
     setPosts((prev) => prev.filter((p) => p.id !== postId));
+  };
+
+  const startEditPost = (post: LivePost) => {
+    setEditingPostId(post.id);
+    setEditCaptionText(post.message || "");
+    setEditError(null);
+  };
+
+  const cancelEditPost = () => {
+    setEditingPostId(null);
+    setEditCaptionText("");
+    setEditError(null);
+  };
+
+  const saveEditPost = async (postId: string) => {
+    setEditSaving(true);
+    setEditError(null);
+    const result = await safeFetchJson<{ error?: string }>(`/api/bots/${bot.id}/posts`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ postId, caption: editCaptionText }),
+    });
+    setEditSaving(false);
+    if (!result.ok) {
+      setEditError(result.error || "Couldn't update that post.");
+      return;
+    }
+    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, message: editCaptionText } : p)));
+    setEditingPostId(null);
+  };
+
+  const loadComments = async (postId: string) => {
+    setCommentsLoading(postId);
+    setCommentsError(null);
+    const result = await safeFetchJson<{ comments?: PostComment[]; error?: string }>(`/api/bots/${bot.id}/posts/${postId}/comments`);
+    setCommentsLoading(null);
+    if (!result.ok) {
+      setCommentsError(result.error || "Couldn't load comments.");
+      return;
+    }
+    setCommentsByPost((prev) => ({ ...prev, [postId]: result.data?.comments ?? [] }));
+  };
+
+  const toggleComments = (postId: string) => {
+    if (commentsOpenFor === postId) {
+      setCommentsOpenFor(null);
+      return;
+    }
+    setCommentsOpenFor(postId);
+    setCommentsError(null);
+    if (!commentsByPost[postId]) void loadComments(postId);
+  };
+
+  const postComment = async (postId: string) => {
+    const message = (newCommentText[postId] ?? "").trim();
+    if (!message) return;
+    setCommentPosting(postId);
+    setCommentsError(null);
+    const result = await safeFetchJson<{ comment?: { id: string }; error?: string }>(`/api/bots/${bot.id}/posts/${postId}/comments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    });
+    setCommentPosting(null);
+    if (!result.ok) {
+      setCommentsError(result.error || "Couldn't post that comment.");
+      return;
+    }
+    setNewCommentText((prev) => ({ ...prev, [postId]: "" }));
+    await loadComments(postId);
   };
 
   const publishNow = async () => {
@@ -739,20 +826,56 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                       <img src={post.picture} alt="" className="aspect-square w-full object-cover" />
                     )}
                     <div className="p-3">
-                      <p className="line-clamp-3 text-sm text-ink">{post.message || "No caption"}</p>
+                      {editingPostId === post.id ? (
+                        <div>
+                          <textarea
+                            value={editCaptionText}
+                            onChange={(e) => setEditCaptionText(e.target.value)}
+                            rows={3}
+                            className="input text-sm"
+                          />
+                          {editError && <p className="mt-1 text-xs text-alert">{editError}</p>}
+                          <div className="mt-2 flex gap-2">
+                            <button onClick={() => void saveEditPost(post.id)} disabled={editSaving} className="btn-primary text-xs">
+                              {editSaving ? "Saving…" : "Save"}
+                            </button>
+                            <button onClick={cancelEditPost} disabled={editSaving} className="btn-secondary text-xs">
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="line-clamp-3 text-sm text-ink">{post.message || "No caption"}</p>
+                      )}
                       <div className="mt-2 flex items-center justify-between gap-2">
                         <div className="flex gap-3 font-data text-xs text-faded">
                           <span>♥ {post.likeCount}</span>
-                          <span>💬 {post.commentCount}</span>
+                          <button onClick={() => toggleComments(post.id)} className="hover:text-ink">
+                            💬 {post.commentCount}
+                          </button>
                         </div>
                         <span className="font-data text-[11px] text-faded">{formatActivityTime(post.createdTime)}</span>
                       </div>
-                      <div className="mt-3 flex items-center gap-2">
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
                         {post.permalink && (
                           <a href={post.permalink} target="_blank" rel="noreferrer" className="btn-secondary text-xs">
                             View on Instagram
                           </a>
                         )}
+                        {editingPostId !== post.id && (
+                          <button
+                            onClick={() => startEditPost(post)}
+                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-faded hover:text-ink"
+                          >
+                            <Pencil size={12} /> Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => toggleComments(post.id)}
+                          className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-faded hover:text-ink"
+                        >
+                          <MessageCircle size={12} /> Comments
+                        </button>
                         <button
                           onClick={() => deletePost(post.id)}
                           disabled={deletingPostId === post.id}
@@ -761,6 +884,39 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                           <Trash2 size={12} /> {deletingPostId === post.id ? "Deleting…" : "Delete"}
                         </button>
                       </div>
+
+                      {commentsOpenFor === post.id && (
+                        <div className="mt-3 rounded-lg border border-border/60 bg-surface p-2.5">
+                          {commentsLoading === post.id && <p className="text-xs text-faded">Loading comments…</p>}
+                          {commentsError && <p className="text-xs text-alert">{commentsError}</p>}
+                          {commentsLoading !== post.id && (commentsByPost[post.id]?.length ?? 0) === 0 && (
+                            <p className="text-xs text-faded">No comments yet.</p>
+                          )}
+                          <div className="max-h-48 space-y-2 overflow-y-auto">
+                            {(commentsByPost[post.id] ?? []).map((comment) => (
+                              <div key={comment.id} className="rounded-md border border-border/40 p-2 text-xs">
+                                {comment.from && <p className="font-medium text-ink">{comment.from}</p>}
+                                <p className="text-faded">{comment.message}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              value={newCommentText[post.id] ?? ""}
+                              onChange={(e) => setNewCommentText((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                              placeholder="Write a comment…"
+                              className="input text-xs"
+                            />
+                            <button
+                              onClick={() => void postComment(post.id)}
+                              disabled={commentPosting === post.id || !(newCommentText[post.id] ?? "").trim()}
+                              className="btn-primary whitespace-nowrap text-xs"
+                            >
+                              {commentPosting === post.id ? "Posting…" : "Reply"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </article>
                 ))}
