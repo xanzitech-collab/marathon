@@ -245,21 +245,27 @@ export async function extractTikTokProfileVideos(
   limit: number,
 ): Promise<Array<{ id: string; url: string; title: string }>> {
   try {
-    const youtubedl = (await import("youtube-dl-exec")).default;
-    const info = (await youtubedl(`https://www.tiktok.com/@${handle}`, {
-      dumpSingleJson: true,
-      noWarnings: true,
-      flatPlaylist: true,
-      playlistEnd: limit,
-    })) as { entries?: Array<{ id?: string; webpage_url?: string; url?: string; title?: string }> };
+    // TikTok intermittently withholds the id this needs from the profile
+    // page ("Unable to extract secondary user ID") — confirmed flaky
+    // per-request (same handle fails then succeeds moments later), not a
+    // real per-account block, so a couple of retries recovers most of them.
+    return await withRetries(async () => {
+      const youtubedl = (await import("youtube-dl-exec")).default;
+      const info = (await youtubedl(`https://www.tiktok.com/@${handle}`, {
+        dumpSingleJson: true,
+        noWarnings: true,
+        flatPlaylist: true,
+        playlistEnd: limit,
+      })) as { entries?: Array<{ id?: string; webpage_url?: string; url?: string; title?: string }> };
 
-    return (info.entries ?? [])
-      .map((entry) => ({
-        id: entry.id ?? "",
-        url: entry.webpage_url ?? entry.url ?? "",
-        title: entry.title ?? "",
-      }))
-      .filter((entry) => entry.id && entry.url);
+      return (info.entries ?? [])
+        .map((entry) => ({
+          id: entry.id ?? "",
+          url: entry.webpage_url ?? entry.url ?? "",
+          title: entry.title ?? "",
+        }))
+        .filter((entry) => entry.id && entry.url);
+    }, 3, 1500);
   } catch (error) {
     console.warn(`[discovery-media] TikTok profile listing failed for @${handle}: ${error instanceof Error ? error.message : String(error)}`);
     return [];
