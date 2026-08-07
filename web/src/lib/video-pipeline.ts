@@ -1,6 +1,8 @@
 import os from "node:os";
 import path from "node:path";
-import { promises as fs } from "node:fs";
+import { promises as fs, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import { cleanupVideoArtifacts, prepareVideoArtifacts } from "@/lib/ffmpeg-processor";
@@ -32,9 +34,14 @@ async function downloadFile(url: string, outputPath: string) {
   if (!response.ok) {
     throw new Error(`Failed to download video (${response.status})`);
   }
+  if (!response.body) {
+    throw new Error("Failed to download video: empty response body");
+  }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(outputPath, buffer);
+  // Stream straight to disk instead of buffering the whole file in memory
+  // first — buffering a full video in RAM on top of ffmpeg's own memory use
+  // is enough to OOM-kill a 512MB Render free-tier container mid-request.
+  await pipeline(Readable.fromWeb(response.body as never), createWriteStream(outputPath));
 }
 
 function normalizeHashtags(tags: string[]): string[] {

@@ -1,6 +1,8 @@
 import os from "node:os";
 import path from "node:path";
-import { promises as fs } from "node:fs";
+import { promises as fs, createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { Readable } from "node:stream";
 import { spawn } from "node:child_process";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
@@ -30,9 +32,14 @@ async function downloadToFile(url: string, filePath: string) {
   if (!response.ok) {
     throw new Error(`Download failed (${response.status}) for ${url}`);
   }
+  if (!response.body) {
+    throw new Error(`Download failed: empty response body for ${url}`);
+  }
 
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.writeFile(filePath, buffer);
+  // Stream straight to disk instead of buffering the whole file in memory
+  // first — this runs right alongside ffmpeg's own memory use, and buffering
+  // full videos/audio in RAM is enough to OOM-kill a 512MB Render container.
+  await pipeline(Readable.fromWeb(response.body as never), createWriteStream(filePath));
 }
 
 function runFfmpeg(args: string[]) {
