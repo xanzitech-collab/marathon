@@ -84,6 +84,18 @@ export function isFocusAligned(contentTarget: string, input: FocusInput): boolea
     return keywordScore(text, must) >= 1;
   }
 
+  // Fan-sourced content (curated fan/edit TikTok accounts, or a search already
+  // scoped to the artist's name via site:tiktok.com "<artist>") is inherently
+  // about the artist by construction — the raw scraped clip's own title/tags
+  // almost never literally repeat the artist's name/handle the way the
+  // isAboutArtist gate below requires. Gating this target on that check was
+  // auto-cancelling essentially all fan_engagement content, the app's own
+  // default content target for every new bot.
+  if (contentTarget === "fan_engagement" || contentTarget === "fan_reactions") {
+    const must = ["fan", "reaction", "comment", "response", "duet", "edit", "shoutout", "cover", "tribute"];
+    return keywordScore(text, must) >= 1;
+  }
+
   // The artist's name ("Only1Marathon") collides with the common English word
   // "marathon" (running races) — without this, generic searches happily surface
   // real marathon-running content that has nothing to do with the artist, and
@@ -100,11 +112,6 @@ export function isFocusAligned(contentTarget: string, input: FocusInput): boolea
 
   if (contentTarget === "song_snippets") {
     const must = ["song", "snippet", "audio", "lyrics", "music", "studio", "recording"];
-    return keywordScore(text, must) >= 1;
-  }
-
-  if (contentTarget === "fan_reactions") {
-    const must = ["reaction", "fans", "fan", "comment", "response", "duet"];
     return keywordScore(text, must) >= 1;
   }
 

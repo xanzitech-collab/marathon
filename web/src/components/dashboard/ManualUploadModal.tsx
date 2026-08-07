@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, ChevronDown, ChevronRight, Music, Trash2, Radio } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Music, Trash2, Radio, CheckCircle2 } from "lucide-react";
 import type { BotWithHealth, ConnectablePlatform, Song } from "@/types/app";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
@@ -79,6 +79,10 @@ function extractSourceAccountHandle(url: string): string | null {
   return null;
 }
 
+function isRateLimitActive(rateLimitedUntil: string | null | undefined): boolean {
+  return Boolean(rateLimitedUntil) && new Date(rateLimitedUntil as string).getTime() > Date.now();
+}
+
 export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [botId, setBotId] = useState(bots[0]?.id ?? "");
   const [tab, setTab] = useState<"vault" | "live">("vault");
@@ -103,8 +107,25 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [publishProgress, setPublishProgress] = useState<{ done: number; total: number } | null>(null);
   const [resultMessage, setResultMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Keyed by entry key, tracked separately from `selected` so successfully
+  // published items can stay visible with a checkmark instead of vanishing
+  // the instant they're done — the list only used to get wiped entirely.
+  const [publishResults, setPublishResults] = useState<Map<string, { status: "success" | "error"; message?: string }>>(
+    new Map(),
+  );
 
   const connectedPlatforms = bots.find((b) => b.id === botId)?.health.connectedPlatforms ?? [];
+  // A platform can be "connected" but still temporarily rate-limited (e.g.
+  // TikTok's own posting-frequency cooldown) — selecting it would silently
+  // get it filtered out of the publish request with no visible error, so
+  // surface that state on the chip itself instead.
+  const rateLimitedUntilByPlatform = useMemo(() => {
+    return new Map(
+      (bots.find((b) => b.id === botId)?.platformAccounts ?? [])
+        .filter((account) => isRateLimitActive(account.rate_limited_until))
+        .map((account) => [account.platform, account.rate_limited_until as string]),
+    );
+  }, [bots, botId]);
 
   const { liveGroups, liveUngrouped } = useMemo(() => {
     const byHandle = new Map<string, LiveItem[]>();
@@ -334,10 +355,11 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     setResultMessage(null);
     setError(null);
 
-    const entries = Array.from(selected.values());
+    const entries = Array.from(selected.values()).filter((e) => publishResults.get(e.key)?.status !== "success");
     const vaultJobs = entries
       .filter((e) => e.kind === "vault" && e.vaultItemId && e.platforms.length > 0)
       .map((e) => ({
+        key: e.key,
         endpoint: `/api/bots/${botId}/manual-publish`,
         items: [
           {
@@ -353,6 +375,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     const liveJobs = entries
       .filter((e) => e.kind === "live" && e.mediaAssetId && !e.resolveError && e.platforms.length > 0)
       .map((e) => ({
+        key: e.key,
         endpoint: `/api/bots/${botId}/live-publish`,
         items: [
           {
@@ -380,6 +403,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
 
     let publishedCount = 0;
     const errors: string[] = [];
+    const results = new Map<string, { status: "success" | "error"; message?: string }>();
 
     for (const job of jobs) {
       try {
@@ -390,25 +414,33 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
         });
         if (result.ok) {
           publishedCount += result.data?.publishedCount ?? 0;
+          results.set(job.key, { status: "success" });
         } else {
-          errors.push(result.error || "Publish failed.");
+          const message = result.error || "Publish failed.";
+          errors.push(message);
+          results.set(job.key, { status: "error", message });
         }
       } catch (jobError) {
-        errors.push(jobError instanceof Error ? jobError.message : "Publish failed.");
+        const message = jobError instanceof Error ? jobError.message : "Publish failed.";
+        errors.push(message);
+        results.set(job.key, { status: "error", message });
       }
       setPublishProgress((prev) => (prev ? { done: prev.done + 1, total: prev.total } : prev));
     }
 
     setResultMessage(`Published ${publishedCount} of ${total}.`);
     if (errors.length > 0) setError(errors.slice(0, 3).join(" | "));
-    setSelected(new Map());
+    setPublishResults((prev) => new Map([...prev, ...results]));
     setPublishing(false);
     setPublishProgress(null);
   };
 
   const selectedList = Array.from(selected.values());
   const publishableCount = selectedList.filter(
-    (e) => (e.kind === "vault" || (e.mediaAssetId && !e.resolveError)) && e.platforms.length > 0,
+    (e) =>
+      publishResults.get(e.key)?.status !== "success" &&
+      (e.kind === "vault" || (e.mediaAssetId && !e.resolveError)) &&
+      e.platforms.length > 0,
   ).length;
 
   return (
@@ -570,14 +602,24 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           <div className="max-h-[45vh] w-full shrink-0 overflow-y-auto border-t border-border p-3 sm:p-4 md:h-auto md:max-h-none md:w-[380px] md:border-l md:border-t-0">
             <h3 className="mb-2 text-sm font-medium text-ink">Review &amp; publish ({publishableCount})</h3>
             <div className="space-y-3">
-              {selectedList.map((entry) => (
+              {selectedList.map((entry) => {
+                const result = publishResults.get(entry.key);
+                return (
                 <div key={entry.key} className="rounded-lg border border-border bg-canvas p-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="truncate text-xs text-faded">{entry.title}</p>
-                    <button onClick={() => removeSelected(entry.key)} className="text-alert">
-                      <Trash2 size={13} />
-                    </button>
+                    <div className="flex items-center gap-1.5">
+                      {result?.status === "success" && (
+                        <CheckCircle2 size={14} className="text-live" aria-label="Posted" />
+                      )}
+                      <button onClick={() => removeSelected(entry.key)} className="text-alert">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
+                  {result?.status === "error" && (
+                    <p className="mt-1 text-[11px] text-alert">{result.message || "Publish failed."}</p>
+                  )}
                   {entry.kind === "live" && entry.resolveError && (
                     <p className="mt-1 text-[11px] text-alert">{entry.resolveError}</p>
                   )}
@@ -600,16 +642,23 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {PUBLISH_PLATFORMS.map((p) => {
                       const isConnected = connectedPlatforms.includes(p);
+                      const rateLimitedUntil = rateLimitedUntilByPlatform.get(p);
+                      const isDisabled = !isConnected || Boolean(rateLimitedUntil);
                       const isOn = entry.platforms.includes(p);
+                      const disabledReason = !isConnected
+                        ? `${PUBLISH_PLATFORM_LABELS[p]} isn't connected on this channel`
+                        : rateLimitedUntil
+                          ? `${PUBLISH_PLATFORM_LABELS[p]} is rate-limited until ${new Date(rateLimitedUntil).toLocaleString()}`
+                          : undefined;
                       return (
                         <button
                           key={p}
                           type="button"
-                          disabled={!isConnected}
+                          disabled={isDisabled}
                           onClick={() => togglePlatformForEntry(entry.key, p)}
-                          title={isConnected ? undefined : `${PUBLISH_PLATFORM_LABELS[p]} isn't connected on this channel`}
+                          title={disabledReason}
                           className={`rounded-full border px-2 py-0.5 text-[11px] transition ${
-                            !isConnected
+                            isDisabled
                               ? "cursor-not-allowed border-border/40 text-faded/40"
                               : isOn
                                 ? "border-signal bg-signal/10 text-signal"
@@ -617,6 +666,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           }`}
                         >
                           {PUBLISH_PLATFORM_LABELS[p]}
+                          {rateLimitedUntil ? " (rate-limited)" : ""}
                         </button>
                       );
                     })}
@@ -674,7 +724,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
               {selectedList.length === 0 && <p className="text-xs text-faded">Click items on the left to add them here.</p>}
             </div>
           </div>

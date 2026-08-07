@@ -68,6 +68,11 @@ const TIKTOK_CURATED_FAN_HANDLES = [
   "luxury_exotics_1",
   "momentsofgregory",
   "majesticnaturemoments",
+  "millionaire.zw",
+  "byarvelor",
+  "love4infinity3",
+  "lucidxi_reelz",
+  "ghost986quotes",
 ];
 
 export class ContentDiscoveryService {

@@ -407,10 +407,16 @@ export async function publishNextQueuedItem(
   // a human-approved caption — reuse it instead of the meme-path's normal
   // re-generate-every-time behavior.
   const isManualSelection = baseMetadata.manual_selection === true;
+  // Belt-and-suspenders: some already-queued items had this internal debug
+  // note baked into their saved caption from before it was fixed to never be
+  // generated in the first place — since a reused caption is never
+  // regenerated, strip it here too so it can't keep resurfacing on retries.
+  const stripLegacyReviewNote = (text: string) =>
+    text.replace(/\n*Manual review recommended: low-confidence context\.\n*/g, "\n").trim();
   const reusableCaption =
     !isMemePost || isManualSelection
       ? typeof item.generated_caption === "string" && item.generated_caption.trim()
-        ? item.generated_caption
+        ? stripLegacyReviewNote(item.generated_caption)
         : null
       : null;
   const discoveryTitle = typeof baseMetadata.discovery_title === "string" ? baseMetadata.discovery_title : null;
