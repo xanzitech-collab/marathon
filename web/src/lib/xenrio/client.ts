@@ -163,17 +163,31 @@ export class XenrioClient {
   // (confirmed live: a Facebook 429 took Instagram down with it in one call).
   // Pull the offending platform out of the error body so the caller can drop
   // just that target and retry with the rest instead of failing everything.
-  private static extractBlockedTargetFromError(errorMessage: string): { platform: string; reason: string } | undefined {
+  private static extractBlockedTargetFromError(
+    errorMessage: string,
+  ): { platform: string; reason: string; rateLimitedUntil?: string } | undefined {
     const jsonStart = errorMessage.indexOf("{");
     if (jsonStart < 0) return undefined;
     try {
-      const parsed = JSON.parse(errorMessage.slice(jsonStart)) as { error?: string; details?: { platform?: string } };
+      const parsed = JSON.parse(errorMessage.slice(jsonStart)) as {
+        error?: string;
+        details?: { platform?: string; rateLimitedUntil?: string };
+      };
       const platform = parsed.details?.platform;
       if (!platform) return undefined;
-      return { platform, reason: parsed.error ?? errorMessage };
+      return { platform, reason: parsed.error ?? errorMessage, rateLimitedUntil: parsed.details?.rateLimitedUntil };
     } catch {
       return undefined;
     }
+  }
+
+  // Exposed so callers can pull rate-limit info back out of a thrown publish
+  // error (e.g. the single-remaining-target case, which rethrows instead of
+  // dropping the target) to persist a per-platform cooldown.
+  static parseRateLimit(errorMessage: string): { platform: string; rateLimitedUntil: string } | undefined {
+    const blocked = XenrioClient.extractBlockedTargetFromError(errorMessage);
+    if (!blocked?.rateLimitedUntil) return undefined;
+    return { platform: blocked.platform, rateLimitedUntil: blocked.rateLimitedUntil };
   }
 
   private static readExistingProfileIdFromConflict(errorMessage: string): string | undefined {
@@ -301,7 +315,7 @@ export class XenrioClient {
 
   async publish(input: XenrioPublishInput): Promise<{
     postId: string;
-    skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string }>;
+    skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string; rateLimitedUntil?: string }>;
     failedPlatforms: Array<{ platform: string; error: string }>;
   }> {
     const content = input.caption;
@@ -310,7 +324,7 @@ export class XenrioClient {
       (input.mediaUrl && /(\.mp4|\.mov|\.webm|\.m4v)(\?|$)/i.test(input.mediaUrl) ? "video" : "image");
 
     let remainingTargets = [...input.targets];
-    const skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string }> = [];
+    const skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string; rateLimitedUntil?: string }> = [];
 
     // A single blocked/rate-limited platform makes Zernio reject the WHOLE
     // multi-platform request — retry with just that target dropped instead of
@@ -366,7 +380,12 @@ export class XenrioClient {
         const blockedTarget = blocked ? remainingTargets.find((target) => target.platform === blocked.platform) : undefined;
 
         if (blockedTarget && remainingTargets.length > 1) {
-          skipped.push({ platform: blockedTarget.platform, accountId: blockedTarget.accountId, reason: blocked!.reason });
+          skipped.push({
+            platform: blockedTarget.platform,
+            accountId: blockedTarget.accountId,
+            reason: blocked!.reason,
+            rateLimitedUntil: blocked!.rateLimitedUntil,
+          });
           remainingTargets = remainingTargets.filter((target) => target !== blockedTarget);
           continue;
         }

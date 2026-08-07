@@ -48,6 +48,7 @@ export interface Database {
           zernio_account_id: string;
           username: string | null;
           connection_status: string;
+          rate_limited_until: string | null;
           created_at: string;
           updated_at: string;
         };

@@ -219,6 +219,32 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     }
   };
 
+  // On/off is a quick-action toggle, not part of the "edit settings, then
+  // hit Save" flow — it needs to persist immediately on click. Previously it
+  // only flipped local form state, so it silently reverted on refresh unless
+  // the user also separately clicked Save right after.
+  const toggleActive = async () => {
+    const nextActive = !form.is_active;
+    setForm({ ...form, is_active: nextActive });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await safeFetchJson<{ bot?: BotWithHealth; error?: unknown }>(`/api/bots/${bot.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      if (!result.ok) {
+        setForm({ ...form, is_active: !nextActive });
+        setSaveError(result.error || "Couldn't change that.");
+        return;
+      }
+      await onUpdated();
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const connectInstagram = async (platform: ConnectablePlatform) => {
     setInstagramActionLoading(platform);
     window.location.assign(`/api/bots/${bot.id}/connect?mode=start&platform=${platform}`);
@@ -682,7 +708,8 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                     {voiceListening ? "Listening…" : "Speak instead"}
                   </button>
                   <button
-                    onClick={() => setForm({ ...form, is_active: !form.is_active })}
+                    onClick={() => void toggleActive()}
+                    disabled={saving}
                     className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
                       form.is_active ? "bg-live text-canvas" : "border border-border text-faded hover:text-ink"
                     }`}

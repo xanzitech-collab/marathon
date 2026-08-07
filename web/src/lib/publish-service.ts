@@ -12,7 +12,7 @@ import { prepareMemeImageForPublish } from "@/lib/meme-image";
 import { prepareGenericImageForPublish } from "@/lib/image-prepare";
 import { isFocusAligned, isKnownWrapperSource } from "@/lib/content-guard";
 import { createPublishApiError, createPublishApiResult, type PublishApiResult } from "@/lib/publish-response";
-import { listPlatformAccounts } from "@/lib/platform-accounts";
+import { listPlatformAccounts, isPlatformRateLimited, markPlatformRateLimited, isConnectablePlatform } from "@/lib/platform-accounts";
 import type { XenrioPublishTarget } from "@/lib/xenrio/client";
 import type { ConnectablePlatform } from "@/types/app";
 
@@ -222,7 +222,34 @@ export async function publishNextQueuedItem(
     connectedTargets = connectedTargets.filter((target) => requested.has(target.platform));
   }
 
+  // Skip any platform still inside a previously-seen rate-limit window
+  // instead of hammering it again — TikTok in particular has repeatedly
+  // 429'd on every attempt made during an active cooldown, wasting a full
+  // Gemini/ffmpeg run each time for a request that was never going to succeed.
+  const rateLimitedUntilByPlatform = new Map(
+    platformAccounts
+      .filter((account) => isPlatformRateLimited(account))
+      .map((account) => [account.platform, account.rate_limited_until as string]),
+  );
+  const rateLimitPreSkipped = connectedTargets.filter((target) => rateLimitedUntilByPlatform.has(target.platform));
+  connectedTargets = connectedTargets.filter((target) => !rateLimitedUntilByPlatform.has(target.platform));
+
   if (connectedTargets.length === 0) {
+    if (rateLimitPreSkipped.length > 0) {
+      const summary = rateLimitPreSkipped
+        .map((target) => `${target.platform} until ${rateLimitedUntilByPlatform.get(target.platform)}`)
+        .join(", ");
+      // Put it back in the queue rather than "failed" — this is a transient
+      // platform cooldown, not a broken item, and it'll succeed on its own
+      // once the window passes.
+      await supabase
+        .from("content_queue")
+        .update({ status: "queued", error_message: `Skipped: still rate-limited (${summary})` })
+        .eq("id", item.id);
+
+      return createPublishApiError(`All connected platforms are still rate-limited (${summary})`, 429);
+    }
+
     await supabase
       .from("content_queue")
       .update({
@@ -573,8 +600,20 @@ export async function publishNextQueuedItem(
     publishedPostId = published.postId;
 
     const warnings: string[] = [];
+    if (rateLimitPreSkipped.length > 0) {
+      warnings.push(
+        `Skipped (still rate-limited): ${rateLimitPreSkipped
+          .map((target) => `${target.platform} until ${rateLimitedUntilByPlatform.get(target.platform)}`)
+          .join("; ")}`,
+      );
+    }
     if (published.skipped.length > 0) {
       warnings.push(`Skipped (rate-limited): ${published.skipped.map((s) => `${s.platform} - ${s.reason}`).join("; ")}`);
+      for (const skippedTarget of published.skipped) {
+        if (skippedTarget.rateLimitedUntil) {
+          await markPlatformRateLimited(supabase, id, skippedTarget.platform, skippedTarget.rateLimitedUntil);
+        }
+      }
     }
     if (published.failedPlatforms.length > 0) {
       warnings.push(`Failed to post: ${published.failedPlatforms.map((p) => `${p.platform} - ${p.error}`).join("; ")}`);
@@ -586,6 +625,24 @@ export async function publishNextQueuedItem(
   } catch (publishError) {
     const message = publishError instanceof Error ? publishError.message : "Unknown publish error";
     console.error(`[${id}] Xenrio publish failed:`, message);
+
+    // A single connected platform hitting its own rate limit isn't a broken
+    // item — persist the cooldown and put it back in the queue so it retries
+    // on its own once the window passes, instead of piling up "failed" items
+    // every time TikTok throttles this account.
+    const rateLimit = XenrioClient.parseRateLimit(message);
+    if (rateLimit && isConnectablePlatform(rateLimit.platform)) {
+      await markPlatformRateLimited(supabase, id, rateLimit.platform, rateLimit.rateLimitedUntil);
+      await supabase
+        .from("content_queue")
+        .update({
+          status: "queued",
+          error_message: `Skipped: ${rateLimit.platform} rate-limited until ${rateLimit.rateLimitedUntil}`,
+        })
+        .eq("id", item.id);
+
+      return createPublishApiError(`${rateLimit.platform} is rate-limited until ${rateLimit.rateLimitedUntil}`, 429);
+    }
 
     // Instagram itself flagged the account and requires a manual security
     // check + reconnect — retrying won't help, and letting automation keep
