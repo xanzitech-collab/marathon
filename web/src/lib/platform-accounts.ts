@@ -28,8 +28,13 @@ export function isPlatformRateLimited(account: Pick<PlatformAccount, "rate_limit
 // Persists the platform's own posting-frequency cooldown (e.g. TikTok's 429
 // "wait 1h 18m") so the next publish attempt can skip that platform instead
 // of blindly retrying and getting rate-limited again on every cycle.
+// Untyped SupabaseClient (not SupabaseClient<Database>) — our hand-written
+// Database type doesn't fully satisfy postgrest-js's generic table-resolution
+// shape, which makes a strictly-typed client's .update() resolve to `never`
+// (confirmed: this is the only .update() call in the codebase that used the
+// typed client, and it broke the Next.js build's type check on Render).
 export async function markPlatformRateLimited(
-  supabase: SupabaseClient<Database>,
+  supabase: SupabaseClient,
   botId: string,
   platform: ConnectablePlatform,
   rateLimitedUntil: string,
