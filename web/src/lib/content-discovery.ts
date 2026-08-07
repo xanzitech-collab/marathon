@@ -26,6 +26,31 @@ interface BotRecord {
   custom_target_prompt?: string | null;
 }
 
+// Each yt-dlp call spawns a real child process — firing all of them at once
+// (e.g. 14 TikTok handles via Promise.allSettled) can spike past the ~512MB
+// free-tier container's memory limit and get the whole app OOM-killed,
+// surfacing as a 502 from Render's proxy instead of a normal JSON error.
+// Capping concurrency keeps peak memory bounded at the cost of a bit more time.
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex++;
+      if (index >= items.length) return;
+      try {
+        results[index] = { status: "fulfilled", value: await fn(items[index]) };
+      } catch (error) {
+        results[index] = { status: "rejected", reason: error };
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
+}
+
 // Fan/edit accounts known to regularly post or repost content featuring the
 // artist — crawled alongside the artist's own profile so "Live" browsing has
 // real depth instead of relying on one account's fixed upload count.
@@ -414,7 +439,7 @@ export class ContentDiscoveryService {
     // profile alone has 40+ clips) — raised well past that, and now also
     // crawls known fan/edit accounts in parallel for real depth.
     const handles = [this.tiktokHandle, ...TIKTOK_CURATED_FAN_HANDLES];
-    const results = await Promise.allSettled(handles.map((handle) => extractTikTokProfileVideos(handle, 50)));
+    const results = await mapWithConcurrency(handles, 4, (handle) => extractTikTokProfileVideos(handle, 50));
 
     const items: DiscoveryItem[] = [];
     results.forEach((result, index) => {
