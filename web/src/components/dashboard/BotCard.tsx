@@ -229,10 +229,20 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     setSaving(true);
     setSaveError(null);
     try {
+      // The PATCH endpoint validates the full bot payload, not a partial
+      // one — sending just { is_active } fails schema validation with 400.
       const result = await safeFetchJson<{ bot?: BotWithHealth; error?: unknown }>(`/api/bots/${bot.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ is_active: nextActive }),
+        body: JSON.stringify({
+          ...form,
+          is_active: nextActive,
+          country: form.country || null,
+          city: form.city || null,
+          additional_persona: form.additional_persona || null,
+          custom_target_prompt: form.custom_target_prompt || null,
+          every_n_days: form.frequency_mode === "every_n_days" ? form.every_n_days : null,
+        }),
       });
       if (!result.ok) {
         setForm({ ...form, is_active: !nextActive });
