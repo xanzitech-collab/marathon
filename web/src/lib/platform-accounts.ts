@@ -48,3 +48,22 @@ export async function markPlatformRateLimited(
     console.warn(`[${botId}] Failed to persist rate limit for ${platform}: ${error.message}`);
   }
 }
+
+// Marks just the ONE platform that the destination flagged for a manual
+// security check as disconnected, instead of the old behavior of flipping
+// the whole bot's connection_status — that stopped every other connected
+// platform (e.g. TikTok) from posting too, over an Instagram-only issue.
+export async function markPlatformDisconnected(
+  supabase: SupabaseClient,
+  botId: string,
+  platform: ConnectablePlatform,
+): Promise<void> {
+  const { error } = await supabase
+    .from("bot_platform_accounts")
+    .update({ connection_status: "disconnected" })
+    .eq("bot_id", botId)
+    .eq("platform", platform);
+  if (error) {
+    console.warn(`[${botId}] Failed to persist disconnect for ${platform}: ${error.message}`);
+  }
+}

@@ -12,7 +12,7 @@ import { prepareMemeImageForPublish } from "@/lib/meme-image";
 import { prepareGenericImageForPublish } from "@/lib/image-prepare";
 import { isFocusAligned, isKnownWrapperSource } from "@/lib/content-guard";
 import { createPublishApiError, createPublishApiResult, type PublishApiResult } from "@/lib/publish-response";
-import { listPlatformAccounts, isPlatformRateLimited, markPlatformRateLimited, isConnectablePlatform } from "@/lib/platform-accounts";
+import { listPlatformAccounts, isPlatformRateLimited, markPlatformRateLimited, markPlatformDisconnected, isConnectablePlatform } from "@/lib/platform-accounts";
 import type { XenrioPublishTarget } from "@/lib/xenrio/client";
 import type { ConnectablePlatform } from "@/types/app";
 
@@ -31,6 +31,18 @@ export async function publishNextQueuedItem(
 ): Promise<PublishApiResult> {
   const id = bot.id;
   const userId = bot.user_id;
+
+  // A crash mid-publish (e.g. the server OOM-killed) leaves an item claimed
+  // as "publishing" forever — nothing else ever picks it back up since only
+  // "queued"/"ready" items are eligible. Recover anything stuck for more
+  // than 10 minutes so it gets retried instead of sitting dead in the queue.
+  const staleThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  await supabase
+    .from("content_queue")
+    .update({ status: "queued", error_message: "Recovered from a stuck 'publishing' state (a previous attempt likely crashed)" })
+    .eq("bot_id", id)
+    .eq("status", "publishing")
+    .lt("updated_at", staleThreshold);
 
   const noRepeatMediaPosts = Math.max(1, Number(process.env.NO_REPEAT_MEDIA_WINDOW_POSTS ?? 5));
   const noRepeatSongPosts = Math.max(1, Number(process.env.NO_REPEAT_SONG_WINDOW_POSTS ?? 4));
@@ -606,6 +618,8 @@ export async function publishNextQueuedItem(
       for (const skippedTarget of published.skipped) {
         if (skippedTarget.rateLimitedUntil) {
           await markPlatformRateLimited(supabase, id, skippedTarget.platform, skippedTarget.rateLimitedUntil);
+        } else if (XenrioClient.isAccountDisconnectedMessage(skippedTarget.reason)) {
+          await markPlatformDisconnected(supabase, id, skippedTarget.platform);
         }
       }
     }
@@ -638,14 +652,18 @@ export async function publishNextQueuedItem(
       return createPublishApiError(`${rateLimit.platform} is rate-limited until ${rateLimit.rateLimitedUntil}`, 429);
     }
 
-    // Instagram itself flagged the account and requires a manual security
-    // check + reconnect — retrying won't help, and letting automation keep
-    // hammering a dead account wastes discovery/Gemini calls every cycle.
-    // Flip the bot to disconnected so it stops trying until the user
-    // reconnects, and the dashboard immediately shows it needs attention.
-    const isAccountDisconnected = message.includes("ACCOUNT_DISCONNECTED") || message.toLowerCase().includes("disconnected and cannot be posted");
+    // The destination platform itself flagged the account and requires a
+    // manual security check + reconnect — retrying won't help. Only mark THAT
+    // platform disconnected (not the whole bot) so other connected platforms
+    // (e.g. TikTok) keep posting normally instead of getting stopped over an
+    // unrelated Instagram issue.
+    const disconnectedPlatform = XenrioClient.matchDisconnectedPlatform(
+      message,
+      connectedTargets.map((target) => target.platform),
+    );
+    const isAccountDisconnected = Boolean(disconnectedPlatform) || XenrioClient.isAccountDisconnectedMessage(message);
     const queueErrorMessage = isAccountDisconnected
-      ? "Instagram disconnected this account for a security check. Log in at instagram.com, clear the check, then reconnect Instagram here."
+      ? `${disconnectedPlatform ?? "A connected platform"} disconnected this account for a security check. Log in and clear the check, then reconnect that platform here.`
       : `Zernio publish failed: ${message}`;
 
     const { error: failedUpdateError } = await supabase
@@ -660,14 +678,8 @@ export async function publishNextQueuedItem(
       console.error(`[${id}] Failed to persist publish failure to queue:`, failedUpdateError);
     }
 
-    if (isAccountDisconnected) {
-      const { error: botUpdateError } = await supabase
-        .from("bots")
-        .update({ connection_status: "disconnected" })
-        .eq("id", id);
-      if (botUpdateError) {
-        console.error(`[${id}] Failed to mark bot as disconnected:`, botUpdateError);
-      }
+    if (disconnectedPlatform && isConnectablePlatform(disconnectedPlatform)) {
+      await markPlatformDisconnected(supabase, id, disconnectedPlatform);
     }
 
     const lower = message.toLowerCase();

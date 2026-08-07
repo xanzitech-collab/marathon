@@ -867,6 +867,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                         {item.status === "posted" && item.error_message && (
                           <p className="mt-1 text-xs text-signal">{item.error_message}</p>
                         )}
+                        {item.status === "cancelled" && item.error_message && (
+                          <p className="mt-1 text-xs text-faded">{item.error_message}</p>
+                        )}
                       </div>
                     ))}
                   </div>
