@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, ChevronDown, ChevronRight, Music, Trash2, Radio, CheckCircle2 } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Music, Trash2, Radio, CheckCircle2, Video, Image as ImageIcon } from "lucide-react";
 import type { BotWithHealth, ConnectablePlatform, Song } from "@/types/app";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
@@ -81,6 +81,16 @@ function extractSourceAccountHandle(url: string): string | null {
 
 function isRateLimitActive(rateLimitedUntil: string | null | undefined): boolean {
   return Boolean(rateLimitedUntil) && new Date(rateLimitedUntil as string).getTime() > Date.now();
+}
+
+function formatTimeRemaining(untilIso: string): string {
+  const msRemaining = new Date(untilIso).getTime() - Date.now();
+  if (msRemaining <= 0) return "less than a minute";
+  const totalMinutes = Math.ceil(msRemaining / 60_000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours <= 0) return `${minutes}m`;
+  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
 }
 
 export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
@@ -407,16 +417,25 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
 
     for (const job of jobs) {
       try {
-        const result = await safeFetchJson<{ publishedCount?: number; error?: string }>(job.endpoint, {
+        // Each job sends exactly one item, so results[0] is that item's real
+        // outcome. A 200 response here just means the request was handled —
+        // the item itself can still have failed/been queued for later (e.g.
+        // rate-limited), which result.ok alone can't tell apart from success.
+        const result = await safeFetchJson<{
+          results?: Array<{ published: boolean; error?: string }>;
+          publishedCount?: number;
+          error?: string;
+        }>(job.endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ items: job.items }),
         });
-        if (result.ok) {
-          publishedCount += result.data?.publishedCount ?? 0;
+        const itemResult = result.data?.results?.[0];
+        if (result.ok && itemResult?.published) {
+          publishedCount += 1;
           results.set(job.key, { status: "success" });
         } else {
-          const message = result.error || "Publish failed.";
+          const message = itemResult?.error || result.error || "Publish failed.";
           errors.push(message);
           results.set(job.key, { status: "error", message });
         }
@@ -522,6 +541,12 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img src={item.previewUrl ?? undefined} alt={item.originalFilename} className="h-24 w-full object-cover" />
                               )}
+                              <span
+                                className="absolute left-1 top-1 flex items-center gap-0.5 rounded-full bg-black/60 px-1.5 py-0.5 text-[10px] text-white"
+                                title={item.mediaType === "video" ? "Video" : "Image"}
+                              >
+                                {item.mediaType === "video" ? <Video size={11} /> : <ImageIcon size={11} />}
+                              </span>
                               {isSelected && (
                                 <span className="absolute right-1 top-1 rounded-full bg-signal px-1.5 py-0.5 text-[10px] text-canvas">✓</span>
                               )}
@@ -648,7 +673,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                       const disabledReason = !isConnected
                         ? `${PUBLISH_PLATFORM_LABELS[p]} isn't connected on this channel`
                         : rateLimitedUntil
-                          ? `${PUBLISH_PLATFORM_LABELS[p]} is rate-limited until ${new Date(rateLimitedUntil).toLocaleString()}`
+                          ? `${PUBLISH_PLATFORM_LABELS[p]} is rate-limited until ${new Date(rateLimitedUntil).toLocaleString()} (${formatTimeRemaining(rateLimitedUntil)} left)`
                           : undefined;
                       return (
                         <button
@@ -666,7 +691,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           }`}
                         >
                           {PUBLISH_PLATFORM_LABELS[p]}
-                          {rateLimitedUntil ? " (rate-limited)" : ""}
+                          {rateLimitedUntil ? ` (${formatTimeRemaining(rateLimitedUntil)} left)` : ""}
                         </button>
                       );
                     })}
