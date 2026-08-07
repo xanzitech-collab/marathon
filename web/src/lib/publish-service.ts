@@ -423,13 +423,7 @@ export async function publishNextQueuedItem(
 
   const contextCaption =
     mediaType === "video" && videoContextSummary
-      ? [
-          caption,
-          videoManualReview ? "Manual review recommended: low-confidence context." : null,
-          videoHashtags.length > 0 ? videoHashtags.join(" ") : null,
-        ]
-          .filter(Boolean)
-          .join("\n\n")
+      ? [caption, videoHashtags.length > 0 ? videoHashtags.join(" ") : null].filter(Boolean).join("\n\n")
       : caption;
 
   // The artist's own selected song is the whole point of the soundtrack
