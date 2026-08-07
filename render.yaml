@@ -75,6 +75,8 @@ services:
         value: "false"
       - key: VIDEO_MAX_DURATION_SECONDS
         value: "30"
+      - key: VIDEO_RENDER_RESOLUTION
+        value: "1080x1920"
       - key: NO_REPEAT_MEDIA_WINDOW_POSTS
         value: "5"
       - key: NO_REPEAT_SONG_WINDOW_POSTS

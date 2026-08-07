@@ -8,6 +8,20 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import { chooseStrategicAudioStart, type AudioStructureHint } from "@/lib/audio-structure";
 
+// The gblur filter at full 1080x1920 is one of ffmpeg's most memory/CPU-heavy
+// operations — on a constrained host (e.g. Render's free tier, 512MB RAM)
+// this can be enough on its own to OOM-kill the whole app mid-render. Set
+// VIDEO_RENDER_RESOLUTION=720x1280 (no redeploy needed, just restart) to test
+// whether a lower render resolution avoids that without a code change.
+function getRenderResolution(): { width: number; height: number } {
+  const raw = process.env.VIDEO_RENDER_RESOLUTION;
+  const match = raw?.match(/^(\d+)x(\d+)$/);
+  if (match) {
+    return { width: Number(match[1]), height: Number(match[2]) };
+  }
+  return { width: 1080, height: 1920 };
+}
+
 interface RenderInput {
   supabase: SupabaseClient<Database>;
   userId: string;
@@ -244,9 +258,10 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
     // to 9:16 already. Instead: show the whole image uncropped ("fit"),
     // centered over a blurred, cover-scaled copy of the same image filling
     // the rest of the frame — no black bars, no cropped/zoomed subject.
+    const { width: renderWidth, height: renderHeight } = getRenderResolution();
     const videoFilterComplex =
-      "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=20[bg];" +
-      "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];" +
+      `[0:v]scale=${renderWidth}:${renderHeight}:force_original_aspect_ratio=increase,crop=${renderWidth}:${renderHeight},gblur=sigma=20[bg];` +
+      `[0:v]scale=${renderWidth}:${renderHeight}:force_original_aspect_ratio=decrease[fg];` +
       "[bg][fg]overlay=(W-w)/2:(H-h)/2[outv]";
 
     // Instagram's audio-recognition needs a decent continuous stretch of the
