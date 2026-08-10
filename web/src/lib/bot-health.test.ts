@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { computeBotHealth } from "./bot-health.ts";
+import type { Bot, PlatformAccount } from "../types/app.ts";
 
 test("demo bots do not surface sleeping or missing-xenrio health issues", () => {
   const bot = {
@@ -11,9 +12,11 @@ test("demo bots do not surface sleeping or missing-xenrio health issues", () => 
     connection_status: "connected",
     zernio_account_id: "demo-account",
     instagram_business_id: null,
-  } as any;
+  } as Partial<Bot> as Bot;
 
-  const platformAccounts = [{ platform: "instagram", connection_status: "connected" }] as any[];
+  const platformAccounts = [
+    { platform: "instagram", connection_status: "connected" } as Partial<PlatformAccount> as PlatformAccount,
+  ];
 
   const health = computeBotHealth(bot, platformAccounts);
 
