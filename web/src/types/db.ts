@@ -30,6 +30,7 @@ export interface Database {
           zernio_profile_id: string | null;
           zernio_account_id: string | null;
           last_posted_at: string | null;
+          is_demo: boolean;
           created_at: string;
           updated_at: string;
         };
