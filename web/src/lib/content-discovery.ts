@@ -31,7 +31,14 @@ interface BotRecord {
 // free-tier container's memory limit and get the whole app OOM-killed,
 // surfacing as a 502 from Render's proxy instead of a normal JSON error.
 // Capping concurrency keeps peak memory bounded at the cost of a bit more time.
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+  // Called as each individual item finishes, instead of only after every
+  // item completes — lets the caller stream partial results out immediately.
+  onResult?: (item: T, result: PromiseSettledResult<R>) => void,
+): Promise<PromiseSettledResult<R>[]> {
   const results: PromiseSettledResult<R>[] = new Array(items.length);
   let nextIndex = 0;
 
@@ -39,11 +46,14 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
     while (true) {
       const index = nextIndex++;
       if (index >= items.length) return;
+      let result: PromiseSettledResult<R>;
       try {
-        results[index] = { status: "fulfilled", value: await fn(items[index]) };
+        result = { status: "fulfilled", value: await fn(items[index]) };
       } catch (error) {
-        results[index] = { status: "rejected", reason: error };
+        result = { status: "rejected", reason: error };
       }
+      results[index] = result;
+      onResult?.(items[index], result);
     }
   }
 
@@ -88,17 +98,43 @@ export class ContentDiscoveryService {
    * one specific platform on demand, without resolving actual downloadable
    * media yet (that happens per-item when the user selects one, since
    * resolution is the slow/failure-prone step — see discovery-media.ts).
+   *
+   * onBatch, when given, is called with each small group of items as soon as
+   * that particular source (one TikTok account, one search query, etc.)
+   * finishes — instead of the caller waiting for every source to complete
+   * before seeing anything, which is how this used to work.
    */
-  async browsePlatform(platform: "tiktok" | "facebook" | "youtube"): Promise<DiscoveryItem[]> {
+  async browsePlatform(
+    platform: "tiktok" | "facebook" | "youtube",
+    onBatch?: (items: DiscoveryItem[]) => void,
+  ): Promise<DiscoveryItem[]> {
+    const seen = new Set<string>();
+    const all: DiscoveryItem[] = [];
+    const emit = (rawBatch: DiscoveryItem[]) => {
+      const fresh = rawBatch.filter((item) => {
+        const key = `${item.source}:${item.url}`.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+      if (fresh.length === 0) return;
+      all.push(...fresh);
+      onBatch?.(fresh);
+    };
+
     if (platform === "tiktok") {
       // The artist's own profile is a small, fixed pool (yt-dlp only ever
       // lists the same ~15 uploads) — it ran dry immediately, returning the
       // exact same results every browse. Fan-content search adds real variety.
-      const [profileVideos, fanVideos] = await Promise.all([this.crawlTikTokProfile(), this.crawlTikTokFanSearch()]);
-      return this.shuffle(this.deduplicate([...profileVideos, ...fanVideos]));
+      await Promise.all([this.crawlTikTokProfile(emit), this.crawlTikTokFanSearch(emit)]);
+      return this.shuffle(this.deduplicate(all));
     }
-    if (platform === "facebook") return this.shuffle(this.deduplicate(await this.crawlFacebookVideos()));
-    return this.shuffle(this.deduplicate(await this.crawlYouTubeSearch()));
+    if (platform === "facebook") {
+      await this.crawlFacebookVideos(emit);
+      return this.shuffle(this.deduplicate(all));
+    }
+    await this.crawlYouTubeSearch(emit);
+    return this.shuffle(this.deduplicate(all));
   }
 
   async discoverContent(bot: BotRecord, options?: { limit?: number }): Promise<DiscoveryItem[]> {
@@ -439,34 +475,41 @@ export class ContentDiscoveryService {
     return items;
   }
 
-  private async crawlTikTokProfile(): Promise<DiscoveryItem[]> {
+  private async crawlTikTokProfile(onBatch?: (items: DiscoveryItem[]) => void): Promise<DiscoveryItem[]> {
     // 15 was an arbitrary cap that cut off real uploads (the artist's
     // profile alone has 40+ clips) — raised well past that, and now also
     // crawls known fan/edit accounts in parallel for real depth.
     const handles = [this.tiktokHandle, ...TIKTOK_CURATED_FAN_HANDLES];
-    const results = await mapWithConcurrency(handles, 4, (handle) => extractTikTokProfileVideos(handle, 50));
-
     const items: DiscoveryItem[] = [];
-    results.forEach((result, index) => {
-      if (result.status !== "fulfilled") return;
-      const handle = handles[index];
+
+    const toDiscoveryItems = (handle: string, videos: Awaited<ReturnType<typeof extractTikTokProfileVideos>>) => {
       const isArtist = handle === this.tiktokHandle;
-      for (const video of result.value) {
-        items.push({
-          title: video.title || `${isArtist ? this.artistName : `@${handle}`} TikTok clip`,
-          description: isArtist
-            ? `Official ${this.artistName} TikTok video for fan engagement — ${video.title || video.id}`
-            : `Fan-page TikTok video from @${handle} featuring ${this.artistName} — ${video.title || video.id}`,
-          url: video.url,
-          source: "TikTok",
-          mediaType: "video" as const,
-          // Ranked above generic search results — this is first-party artist
-          // content straight from their own page, not a random search hit.
-          relevanceScore: isArtist ? 92 : 85,
-          tags: isArtist ? ["fan_engagement", "fan", "tiktok", "official"] : ["fan_engagement", "fan", "tiktok"],
-        });
-      }
-    });
+      return videos.map((video) => ({
+        title: video.title || `${isArtist ? this.artistName : `@${handle}`} TikTok clip`,
+        description: isArtist
+          ? `Official ${this.artistName} TikTok video for fan engagement — ${video.title || video.id}`
+          : `Fan-page TikTok video from @${handle} featuring ${this.artistName} — ${video.title || video.id}`,
+        url: video.url,
+        source: "TikTok",
+        mediaType: "video" as const,
+        // Ranked above generic search results — this is first-party artist
+        // content straight from their own page, not a random search hit.
+        relevanceScore: isArtist ? 92 : 85,
+        tags: isArtist ? ["fan_engagement", "fan", "tiktok", "official"] : ["fan_engagement", "fan", "tiktok"],
+      }));
+    };
+
+    await mapWithConcurrency(
+      handles,
+      4,
+      (handle) => extractTikTokProfileVideos(handle, 50),
+      (handle, result) => {
+        if (result.status !== "fulfilled") return;
+        const handleItems = toDiscoveryItems(handle, result.value);
+        items.push(...handleItems);
+        onBatch?.(handleItems);
+      },
+    );
 
     return items;
   }
@@ -475,12 +518,13 @@ export class ContentDiscoveryService {
   // exhausts fast. This finds fan reaction/duet/mention videos instead, same
   // DuckDuckGo HTML-scrape pattern as Facebook/YouTube search below — gives
   // the "Live" tab real variety instead of the same ~15 clips every time.
-  private async crawlTikTokFanSearch(): Promise<DiscoveryItem[]> {
+  private async crawlTikTokFanSearch(onBatch?: (items: DiscoveryItem[]) => void): Promise<DiscoveryItem[]> {
     const videoUrlPattern = /tiktok\.com\/@[\w.-]+\/video\/(\d+)/i;
     const items: DiscoveryItem[] = [];
     const seen = new Set<string>();
 
     for (const query of [`site:tiktok.com "${this.artistName}"`, `site:tiktok.com "@${this.tiktokHandle}"`]) {
+      const batch: DiscoveryItem[] = [];
       try {
         const response = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
           headers: { Accept: "text/html,application/xhtml+xml" },
@@ -497,7 +541,7 @@ export class ContentDiscoveryService {
           seen.add(decoded);
 
           const title = this.stripHtml(match[2] ?? "").trim() || `${this.artistName} TikTok fan clip`;
-          items.push({
+          batch.push({
             title,
             description: `Fan TikTok video mentioning ${this.artistName} — ${title}`,
             url: decoded,
@@ -510,6 +554,8 @@ export class ContentDiscoveryService {
       } catch {
         // A failed search query just means fewer candidates this run.
       }
+      items.push(...batch);
+      if (batch.length > 0) onBatch?.(batch);
     }
 
     return items;
@@ -519,12 +565,13 @@ export class ContentDiscoveryService {
   // return "Unsupported URL"), so real videos are found via search instead —
   // confirmed live that a specific facebook.com/<page>/videos/<id>/ or
   // /reel/<id> URL extracts a real .mp4 with no login required.
-  private async crawlFacebookVideos(): Promise<DiscoveryItem[]> {
+  private async crawlFacebookVideos(onBatch?: (items: DiscoveryItem[]) => void): Promise<DiscoveryItem[]> {
     const videoUrlPattern = /\/(videos|reel)\/([^/?]*\d)/i;
     const items: DiscoveryItem[] = [];
     const seen = new Set<string>();
 
     for (const query of [`site:facebook.com/${this.facebookHandle} reel`, `site:facebook.com/${this.facebookHandle} videos`]) {
+      const batch: DiscoveryItem[] = [];
       try {
         const response = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
           headers: { Accept: "text/html,application/xhtml+xml" },
@@ -543,7 +590,7 @@ export class ContentDiscoveryService {
           seen.add(decoded);
 
           const title = this.stripHtml(match[2] ?? "").trim() || `${this.artistName} Facebook video`;
-          items.push({
+          batch.push({
             title,
             description: `Official ${this.artistName} Facebook video for fan engagement — ${title}`,
             url: decoded,
@@ -556,6 +603,8 @@ export class ContentDiscoveryService {
       } catch {
         // A failed search query just means fewer candidates this run.
       }
+      items.push(...batch);
+      if (batch.length > 0) onBatch?.(batch);
     }
 
     return items;
@@ -567,12 +616,13 @@ export class ContentDiscoveryService {
   // same DuckDuckGo HTML-scrape pattern as Facebook. Per-item extraction is
   // still attempted later and frequently fails/gets skipped — that's
   // surfaced to the user rather than hidden.
-  private async crawlYouTubeSearch(): Promise<DiscoveryItem[]> {
+  private async crawlYouTubeSearch(onBatch?: (items: DiscoveryItem[]) => void): Promise<DiscoveryItem[]> {
     const videoUrlPattern = /youtube\.com\/watch\?v=([\w-]{6,})/i;
     const items: DiscoveryItem[] = [];
     const seen = new Set<string>();
 
     for (const query of [`site:youtube.com/watch ${this.artistName}`, `"${this.youtubeHandle}" youtube`]) {
+      const batch: DiscoveryItem[] = [];
       try {
         const response = await fetch(`https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`, {
           headers: { Accept: "text/html,application/xhtml+xml" },
@@ -589,7 +639,7 @@ export class ContentDiscoveryService {
           seen.add(decoded);
 
           const title = this.stripHtml(match[2] ?? "").trim() || `${this.artistName} YouTube video`;
-          items.push({
+          batch.push({
             title,
             description: `Official ${this.artistName} YouTube video for fan engagement — ${title}`,
             url: decoded,
@@ -602,6 +652,8 @@ export class ContentDiscoveryService {
       } catch {
         // A failed search query just means fewer candidates this run.
       }
+      items.push(...batch);
+      if (batch.length > 0) onBatch?.(batch);
     }
 
     return items;

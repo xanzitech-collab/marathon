@@ -189,10 +189,50 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     setLiveItems([]);
     setLiveError(null);
     setLiveLoading(true);
-    const result = await safeFetchJson<{ items?: LiveItem[]; error?: string }>(`/api/live-discovery?platform=${nextPlatform}`);
-    setLiveLoading(false);
-    if (result.ok) setLiveItems(result.data?.items ?? []);
-    else setLiveError(result.error || "Couldn't load live content for this platform.");
+
+    try {
+      const response = await fetch(`/api/live-discovery?platform=${nextPlatform}`);
+      if (!response.ok || !response.body) {
+        const data = await response.json().catch(() => null);
+        setLiveError(data?.error || "Couldn't load live content for this platform.");
+        return;
+      }
+
+      // Streamed as newline-delimited JSON — each line is a small batch that
+      // gets appended to the list as soon as it arrives, instead of waiting
+      // for the whole crawl to finish before showing anything.
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex = buffer.indexOf("\n");
+        while (newlineIndex !== -1) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          newlineIndex = buffer.indexOf("\n");
+          if (!line) continue;
+
+          try {
+            const payload = JSON.parse(line) as { items?: LiveItem[]; error?: string; done?: boolean };
+            if (payload.items?.length) {
+              setLiveItems((prev) => [...prev, ...payload.items!]);
+            }
+            if (payload.error) setLiveError(payload.error);
+          } catch {
+            // A partial/corrupt line just gets skipped — the rest of the stream still comes through.
+          }
+        }
+      }
+    } catch (error) {
+      setLiveError(error instanceof Error ? error.message : "Couldn't load live content for this platform.");
+    } finally {
+      setLiveLoading(false);
+    }
   };
 
   const openLiveTab = () => {
