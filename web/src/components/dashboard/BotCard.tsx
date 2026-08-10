@@ -558,7 +558,6 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="truncate text-base font-medium text-ink">{bot.name}</h3>
-              {bot.is_demo && <span className="badge badge-neutral shrink-0">Demo</span>}
             </div>
             <p className="font-data text-xs text-ink-dim">
               CH.{String(bot.api_slot).padStart(2, "0")} · {bot.city || "No city set"}, {bot.country || "No country set"}

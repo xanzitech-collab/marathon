@@ -96,15 +96,17 @@ async function main() {
   if (!localUser) throw new Error("Could not find the local app user (marathon@local.only1).");
 
   const count = Number(process.argv[2] ?? 20);
+  const offset = Number(process.argv[3] ?? 0);
   let created = 0;
 
   for (let i = 0; i < count; i += 1) {
-    const location = pick(LOCATIONS, i);
-    const name = `${pick(NAME_PREFIXES, i)} ${pick(NAME_SUFFIXES, i + 3)}`;
-    const persona = pick(PERSONAS, i);
-    const contentTarget = pick(CONTENT_TARGETS, i + 1);
-    const frequencyMode = pick(FREQUENCIES, i);
-    const apiSlot = (i % 5) + 1;
+    const n = i + offset;
+    const location = pick(LOCATIONS, n);
+    const name = `${pick(NAME_PREFIXES, n)} ${pick(NAME_SUFFIXES, n + 3)}`;
+    const persona = pick(PERSONAS, n);
+    const contentTarget = pick(CONTENT_TARGETS, n + 1);
+    const frequencyMode = pick(FREQUENCIES, n);
+    const apiSlot = (n % 5) + 1;
 
     const { data: bot, error: botError } = await supabase
       .from("bots")
@@ -135,7 +137,7 @@ async function main() {
       continue;
     }
 
-    const handle = `${slugify(name)}${100 + i}`;
+    const handle = `${slugify(name)}${100 + n}`;
     const { error: accountError } = await supabase.from("bot_platform_accounts").insert({
       bot_id: bot.id,
       platform: "instagram",

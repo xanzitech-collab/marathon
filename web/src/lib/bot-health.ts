@@ -20,10 +20,10 @@ export function computeBotHealth(bot: Bot, platformAccounts: PlatformAccount[] =
   const anyPlatformConnected = connectedPlatforms.length > 0;
 
   const issues: string[] = [];
-  if (!xenrioKeyConnected) issues.push("Missing Xenrio key slot");
-  if (!geminiKeyConnected) issues.push("Missing Gemini key slot");
+  if (!bot.is_demo && !xenrioKeyConnected) issues.push("Missing Xenrio key slot");
+  if (!bot.is_demo && !geminiKeyConnected) issues.push("Missing Gemini key slot");
   if (!anyPlatformConnected) issues.push("No platforms connected");
-  if (!bot.is_active) issues.push("Bot is sleeping");
+  if (!bot.is_demo && !bot.is_active) issues.push("Bot is sleeping");
 
   return {
     xenrioKeyConnected,

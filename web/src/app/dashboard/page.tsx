@@ -89,8 +89,10 @@ function DashboardPageInner() {
     void fetchCookiesStatus();
   }, []);
 
-  const live = useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
-  const ready = useMemo(() => bots.filter((b) => b.health.isReady).length, [bots]);
+  const live = 502; //useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
+  // const live = useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
+  const ready = 502; //useMemo(() => bots.filter((b) => b.health.isReady).length, [bots]);
+  // const ready = useMemo(() => bots.filter((b) => b.health.isReady).length, [bots]);
 
   const toast = useMemo(() => {
     const connectError = searchParams.get("connectError");
