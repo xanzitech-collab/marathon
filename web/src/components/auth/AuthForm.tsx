@@ -45,10 +45,10 @@ export function AuthForm() {
   return (
     <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-surface p-6">
       <h1 className="font-display text-2xl text-ink">Sign in</h1>
-      <p className="text-sm text-faded">Only1Marathon Bot Control Center</p>
+      <p className="text-sm text-ink-dim">Crew24 Bot Control Center</p>
 
       <div>
-        <label className="mb-1 block text-sm text-faded">Username</label>
+        <label className="mb-1 block text-sm text-ink-dim">Username</label>
         <input
           value={username}
           onChange={(e) => setUsername(e.target.value)}
@@ -59,7 +59,7 @@ export function AuthForm() {
       </div>
 
       <div>
-        <label className="mb-1 block text-sm text-faded">Password</label>
+        <label className="mb-1 block text-sm text-ink-dim">Password</label>
         <input
           value={password}
           onChange={(e) => setPassword(e.target.value)}

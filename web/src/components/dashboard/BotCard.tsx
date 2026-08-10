@@ -515,9 +515,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   const recentPostedItems = useMemo(() => postedItems.slice(0, 3), [postedItems]);
 
   const formatActivityTime = (value?: string | null) => {
-    if (!value) return "—";
+    if (!value) return "-";
     const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "—";
+    if (Number.isNaN(date.getTime())) return "-";
     return new Intl.DateTimeFormat("en", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
   };
 
@@ -551,21 +551,18 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   }, [bot.last_posted_at, queue]);
 
   return (
-    <article className="rounded-2xl border border-border bg-surface">
+    <article className="panel">
       <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
         <div className="flex min-w-0 items-center gap-3">
           <span className={`tally ${isLive ? "tally-live" : bot.health.isReady ? "tally-signal" : "tally-off"}`} />
           <div className="min-w-0">
             <h3 className="truncate text-base font-medium text-ink">{bot.name}</h3>
-            <p className="font-data text-xs text-faded">
+            <p className="font-data text-xs text-ink-dim">
               CH.{String(bot.api_slot).padStart(2, "0")} · {bot.city || "No city set"}, {bot.country || "No country set"}
             </p>
           </div>
         </div>
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="rounded-full border border-border px-3 py-1.5 text-xs text-faded transition hover:border-signal/40 hover:text-ink"
-        >
+        <button onClick={() => setExpanded((v) => !v)} className="btn-secondary px-3 py-1.5 text-xs">
           {expanded ? "Collapse" : "Open"}
         </button>
       </div>
@@ -578,7 +575,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
         {setupSteps.map((step) => (
           <div key={step.label} className="flex min-w-0 items-center gap-2 rounded-lg border border-border/60 px-2.5 py-1.5">
             <span className={`tally shrink-0 ${step.done ? "tally-live" : "tally-off"}`} />
-            <span className="truncate text-xs text-faded">{step.label}</span>
+            <span className="truncate text-xs text-ink-dim">{step.label}</span>
           </div>
         ))}
       </div>
@@ -601,7 +598,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                   if (key === "posts") void loadPosts();
                 }}
                 className={`rounded-md px-2 py-2 transition sm:flex-1 sm:px-3 ${
-                  tab === key ? "bg-signal text-canvas font-medium" : "text-faded hover:text-ink"
+                  tab === key ? "bg-signal text-canvas font-medium" : "text-ink-dim hover:text-ink"
                 }`}
               >
                 {label}
@@ -676,7 +673,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
               </Field>
 
               <div className="md:col-span-2">
-                <p className="mb-2 text-xs uppercase tracking-wide text-faded">Posting days</p>
+                <p className="mb-2 text-xs uppercase tracking-wide text-ink-dim">Posting days</p>
                 <div className="flex flex-wrap gap-2">
                   {WEEKDAYS.map((d) => {
                     const on = form.weekdays.includes(d.value);
@@ -688,7 +685,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                           setForm({ ...form, weekdays });
                         }}
                         className={`rounded-full px-3 py-1.5 text-xs transition ${
-                          on ? "bg-live text-canvas font-medium" : "border border-border text-faded hover:text-ink"
+                          on ? "bg-live text-canvas font-medium" : "border border-border text-ink-dim hover:text-ink"
                         }`}
                       >
                         {d.label}
@@ -700,8 +697,8 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
               <div className="md:col-span-2 rounded-xl border border-border bg-canvas p-4">
                 <p className="text-sm font-medium text-ink">Set the plan in your own words</p>
-                <p className="mt-1 text-xs text-faded">
-                  Type or speak what you want this channel to do — it&apos;ll turn that into a voice, focus, and schedule.
+                <p className="mt-1 text-xs text-ink-dim">
+                  Type or speak what you want this channel to do - it&apos;ll turn that into a voice, focus, and schedule.
                 </p>
                 <textarea
                   value={missionText}
@@ -721,7 +718,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                     onClick={() => void toggleActive()}
                     disabled={saving}
                     className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
-                      form.is_active ? "bg-live text-canvas" : "border border-border text-faded hover:text-ink"
+                      form.is_active ? "bg-live text-canvas" : "border border-border text-ink-dim hover:text-ink"
                     }`}
                   >
                     {form.is_active ? "Channel is on" : "Channel is off"}
@@ -735,9 +732,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
               </div>
 
               <div className="md:col-span-2 rounded-xl border border-border/60 p-3">
-                <p className="mb-2 text-xs uppercase tracking-wide text-faded">Publishing platforms</p>
-                <p className="mb-3 text-xs text-faded">
-                  Connect one or more — when this channel posts, it publishes to every connected platform at once.
+                <p className="mb-2 text-xs uppercase tracking-wide text-ink-dim">Publishing platforms</p>
+                <p className="mb-3 text-xs text-ink-dim">
+                  Connect one or more - when this channel posts, it publishes to every connected platform at once.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {PLATFORMS.map((platform) => {
@@ -759,7 +756,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                             onClick={() => syncPlatform(platform)}
                             disabled={busy}
                             title="Already authorized on the platform/Zernio but not showing here yet? Re-check without redoing OAuth."
-                            className="text-xs text-faded hover:text-ink"
+                            className="text-xs text-ink-dim hover:text-ink"
                           >
                             Sync
                           </button>
@@ -770,7 +767,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                 </div>
               </div>
 
-              <div className="md:col-span-2 rounded-xl border border-border/60 p-3 font-data text-xs text-faded">
+              <div className="md:col-span-2 rounded-xl border border-border/60 p-3 font-data text-xs text-ink-dim">
                 <p className="break-all">Profile: {bot.zernio_profile_id || "not linked"}</p>
                 {PLATFORMS.map((platform) => {
                   const account = bot.platformAccounts?.find((a) => a.platform === platform);
@@ -795,7 +792,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                   <span className={`tally ${isLive ? "tally-live" : "tally-off"}`} />
                   <p className="text-sm font-medium text-ink">{isLive ? "This channel is live" : "This channel is on standby"}</p>
                 </div>
-                <p className="mt-1 text-xs text-faded">
+                <p className="mt-1 text-xs text-ink-dim">
                   It finds content, writes captions, and publishes on its own whenever it&apos;s on and connected.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-3 font-data text-xs">
@@ -814,31 +811,31 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                   {publishLoading ? "Publishing…" : "Publish if ready"}
                 </button>
               </div>
-              {queueActionMessage && <p className="text-xs text-faded">{queueActionMessage}</p>}
+              {queueActionMessage && <p className="text-xs text-ink-dim">{queueActionMessage}</p>}
 
               <div className="rounded-xl border border-border bg-canvas p-3">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-ink">Recent activity</p>
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-data text-[11px] text-faded">
+                    <span className="font-data text-[11px] text-ink-dim">
                       {lastPostedLabel ? `Last posted ${formatActivityTime(lastPostedLabel)}` : "No posts yet"}
                     </span>
                     <button
                       onClick={() => setQueueView("all")}
-                      className={`rounded-full px-2.5 py-1 text-[11px] ${queueView === "all" ? "bg-surface-raised text-ink" : "text-faded"}`}
+                      className={`rounded-full px-2.5 py-1 text-[11px] ${queueView === "all" ? "bg-surface-raised text-ink" : "text-ink-dim"}`}
                     >
                       All
                     </button>
                     <button
                       onClick={() => setQueueView("failed")}
-                      className={`rounded-full px-2.5 py-1 text-[11px] ${queueView === "failed" ? "bg-alert/20 text-alert" : "text-faded"}`}
+                      className={`rounded-full px-2.5 py-1 text-[11px] ${queueView === "failed" ? "bg-alert/20 text-alert" : "text-ink-dim"}`}
                     >
                       Failed
                     </button>
                     <button
                       onClick={() => clearQueueScope("queue")}
                       title="Cancel all queued/ready items"
-                      className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-faded hover:text-alert"
+                      className="flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] text-ink-dim hover:text-alert"
                     >
                       <Trash2 size={12} /> Clear queue
                     </button>
@@ -856,7 +853,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                           >
                             {item.status}
                           </span>
-                          <span className="font-data text-[11px] text-faded">
+                          <span className="font-data text-[11px] text-ink-dim">
                             {formatActivityTime(item.published_at ?? item.updated_at ?? item.created_at)}
                           </span>
                         </div>
@@ -868,7 +865,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                           <p className="mt-1 text-xs text-signal">{item.error_message}</p>
                         )}
                         {item.status === "cancelled" && item.error_message && (
-                          <p className="mt-1 text-xs text-faded">{item.error_message}</p>
+                          <p className="mt-1 text-xs text-ink-dim">{item.error_message}</p>
                         )}
                         {(item.status === "queued" || item.status === "ready") && item.error_message && (
                           <p className="mt-1 text-xs text-signal">{item.error_message}</p>
@@ -877,7 +874,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-faded">Nothing here yet.</p>
+                  <p className="text-sm text-ink-dim">Nothing here yet.</p>
                 )}
               </div>
 
@@ -921,10 +918,10 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
           {tab === "posts" && (
             <div className="space-y-3">
-              {postsLoading && <p className="text-sm text-faded">Loading posts…</p>}
+              {postsLoading && <p className="text-sm text-ink-dim">Loading posts…</p>}
               {postsError && <p className="text-xs text-alert">{postsError}</p>}
               {!postsLoading && !postsError && posts.length === 0 && (
-                <p className="text-sm text-faded">No live posts found for this account yet.</p>
+                <p className="text-sm text-ink-dim">No live posts found for this account yet.</p>
               )}
               <div className="grid gap-3 sm:grid-cols-2">
                 {posts.map((post) => (
@@ -956,13 +953,13 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                         <p className="line-clamp-3 text-sm text-ink">{post.message || "No caption"}</p>
                       )}
                       <div className="mt-2 flex items-center justify-between gap-2">
-                        <div className="flex gap-3 font-data text-xs text-faded">
+                        <div className="flex gap-3 font-data text-xs text-ink-dim">
                           <span>♥ {post.likeCount}</span>
                           <button onClick={() => toggleComments(post.id)} className="hover:text-ink">
                             💬 {post.commentCount}
                           </button>
                         </div>
-                        <span className="font-data text-[11px] text-faded">{formatActivityTime(post.createdTime)}</span>
+                        <span className="font-data text-[11px] text-ink-dim">{formatActivityTime(post.createdTime)}</span>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         {post.permalink && (
@@ -973,14 +970,14 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                         {editingPostId !== post.id && (
                           <button
                             onClick={() => startEditPost(post)}
-                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-faded hover:text-ink"
+                            className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-ink-dim hover:text-ink"
                           >
                             <Pencil size={12} /> Edit
                           </button>
                         )}
                         <button
                           onClick={() => toggleComments(post.id)}
-                          className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-faded hover:text-ink"
+                          className="flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs text-ink-dim hover:text-ink"
                         >
                           <MessageCircle size={12} /> Comments
                         </button>
@@ -995,16 +992,16 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 
                       {commentsOpenFor === post.id && (
                         <div className="mt-3 rounded-lg border border-border/60 bg-surface p-2.5">
-                          {commentsLoading === post.id && <p className="text-xs text-faded">Loading comments…</p>}
+                          {commentsLoading === post.id && <p className="text-xs text-ink-dim">Loading comments…</p>}
                           {commentsError && <p className="text-xs text-alert">{commentsError}</p>}
                           {commentsLoading !== post.id && (commentsByPost[post.id]?.length ?? 0) === 0 && (
-                            <p className="text-xs text-faded">No comments yet.</p>
+                            <p className="text-xs text-ink-dim">No comments yet.</p>
                           )}
                           <div className="max-h-48 space-y-2 overflow-y-auto">
                             {(commentsByPost[post.id] ?? []).map((comment) => (
                               <div key={comment.id} className="rounded-md border border-border/40 p-2 text-xs">
                                 {comment.from && <p className="font-medium text-ink">{comment.from}</p>}
-                                <p className="text-faded">{comment.message}</p>
+                                <p className="text-ink-dim">{comment.message}</p>
                               </div>
                             ))}
                           </div>
@@ -1040,7 +1037,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="min-w-0 text-sm text-ink">
-      <span className="mb-1 block text-xs text-faded">{label}</span>
+      <span className="mb-1 block text-xs text-ink-dim">{label}</span>
       {children}
     </label>
   );
@@ -1179,8 +1176,8 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-canvas p-4 text-sm">
         <p className="font-medium text-ink">Upload your own images or clips</p>
-        <p className="mt-1 text-xs text-faded">
-          The channel uses these to add variety — it&apos;ll still find and create content on its own even without any.
+        <p className="mt-1 text-xs text-ink-dim">
+          The channel uses these to add variety - it&apos;ll still find and create content on its own even without any.
         </p>
         {mediaError && <p className="mt-2 text-xs text-alert">{mediaError}</p>}
       </div>
@@ -1201,21 +1198,21 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
       <div className="grid gap-2 md:grid-cols-3">
         {media.map((m) => (
           <div key={m.id} className="rounded-lg border border-border bg-canvas p-3">
-            <p className="truncate font-data text-[11px] text-faded">{m.public_url || m.storage_path}</p>
+            <p className="truncate font-data text-[11px] text-ink-dim">{m.public_url || m.storage_path}</p>
             <p className="mt-1 text-sm text-ink">{m.media_context_caption}</p>
-            <p className="text-xs text-faded">#{m.tags.join(" #")}</p>
+            <p className="text-xs text-ink-dim">#{m.tags.join(" #")}</p>
             <button onClick={() => deleteMedia(m.id)} disabled={deletingMediaId === m.id} className="mt-2 text-xs text-alert hover:underline disabled:no-underline">
               {deletingMediaId === m.id ? "Removing…" : "Remove"}
             </button>
           </div>
         ))}
-        {!media.length && <p className="text-sm text-faded">No media yet.</p>}
+        {!media.length && <p className="text-sm text-ink-dim">No media yet.</p>}
       </div>
 
       <div className="rounded-xl border border-border bg-canvas p-4 text-sm">
         <p className="font-medium text-ink">Upload soundtracks</p>
-        <p className="mt-1 text-xs text-faded">
-          Add your own songs to this channel&apos;s music vault — mp3, wav, m4a, aac, ogg, flac, mp4 and webm are all fine.
+        <p className="mt-1 text-xs text-ink-dim">
+          Add your own songs to this channel&apos;s music vault - mp3, wav, m4a, aac, ogg, flac, mp4 and webm are all fine.
           Leave the name blank to keep the file&apos;s own name.
         </p>
         {songError && <p className="mt-2 text-xs text-alert">{songError}</p>}
@@ -1241,7 +1238,7 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
         {songs.map((song) => (
           <div key={song.id} className="rounded-lg border border-border bg-canvas p-3">
             <p className="truncate text-sm text-ink">{song.title}</p>
-            <p className="text-xs text-faded">
+            <p className="text-xs text-ink-dim">
               {song.duration_seconds ? `${Math.round(song.duration_seconds)}s` : "Unknown length"} · {song.mood ?? "neutral"}
             </p>
             <button onClick={() => deleteSong(song.id)} disabled={deletingSongId === song.id} className="mt-2 text-xs text-alert hover:underline disabled:no-underline">
@@ -1249,7 +1246,7 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
             </button>
           </div>
         ))}
-        {!songs.length && <p className="text-sm text-faded">No uploaded songs yet.</p>}
+        {!songs.length && <p className="text-sm text-ink-dim">No uploaded songs yet.</p>}
       </div>
     </div>
   );

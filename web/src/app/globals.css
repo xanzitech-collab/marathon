@@ -1,28 +1,65 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Only1Marathon Studio — design tokens
+   Aesthetic: multi-channel broadcast console. The product's real
+   job is running several social accounts at once, so the palette
+   and the "tally" status lights read like a mixing-desk readout,
+   not a generic dark-mode dashboard.
+   ============================================================ */
+
 :root {
-  --canvas: #161c23;
-  --surface: #172e45;
-  --surface-raised: color-mix(in srgb, var(--surface) 70%, var(--faded) 30%);
-  --ink: #c3c7ce;
-  --faded: #7990a8;
-  --border: color-mix(in srgb, var(--faded) 30%, var(--surface) 70%);
-  --signal: #1464be;
-  --live: #b6a04d;
-  --alert: #8f6a41;
+  /* Base surfaces — cool graphite, not pure black */
+  --canvas: #0a0e13;
+  --surface: #12181f;
+  --surface-raised: #1b232c;
+  --border: #232c36;
+  --border-strong: #2f3946;
+
+  /* Text */
+  --ink: #e8ebef;
+  --ink-dim: #99a4b1;
+  --ink-faint: #5f6b78;
+
+  /* Status / signal system — reused everywhere as the product's signature */
+  --signal: #2f6fe4;   /* primary action / "connected" */
+  --signal-dim: #1c3f80;
+  --live: #c9a227;     /* "on air" / actively posting */
+  --live-dim: #6b5717;
+  --alert: #c4573a;    /* needs attention */
+  --alert-dim: #6b2f1f;
+
+  --radius: 0.625rem;
+  --radius-lg: 1rem;
 }
 
 @theme inline {
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-ink: var(--ink);
-  --color-faded: var(--faded);
+  --color-ink-dim: var(--ink-dim);
+  --color-ink-faint: var(--ink-faint);
   --color-signal: var(--signal);
+  --color-signal-dim: var(--signal-dim);
   --color-live: var(--live);
+  --color-live-dim: var(--live-dim);
   --color-alert: var(--alert);
+  --color-alert-dim: var(--alert-dim);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
   --font-mono: var(--font-data);
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -30,21 +67,14 @@ body {
   color: var(--ink);
   font-family: var(--font-body), sans-serif;
   overflow-x: hidden;
-  /* Long unbroken strings (ids, hashes, urls) otherwise force their own
-     min-content width past the viewport regardless of flex/grid sizing —
-     this is inherited so it fixes it everywhere without per-element fixes. */
   overflow-wrap: anywhere;
   word-break: break-word;
-}
-
-html {
-  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .font-display {
-  font-family: var(--font-display), serif;
-  font-style: italic;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display), sans-serif;
+  letter-spacing: -0.02em;
 }
 
 .font-data {
@@ -52,7 +82,55 @@ html {
   letter-spacing: 0.02em;
 }
 
-/* Tally light — the signature status indicator */
+/* Accessible focus ring everywhere, respects keyboard-only nav */
+:focus-visible {
+  outline: 2px solid var(--signal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ---------- Layout shells ---------- */
+
+.shell {
+  width: 100%;
+  max-width: 72rem;
+  margin-inline: auto;
+  padding-inline: clamp(1rem, 4vw, 2rem);
+}
+
+.panel {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+}
+
+.panel-raised {
+  border: 1px solid var(--border-strong);
+  background: var(--surface-raised);
+  border-radius: var(--radius-lg);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- Tally light — the signature status indicator ---------- */
+
 .tally {
   position: relative;
   width: 8px;
@@ -60,50 +138,156 @@ html {
   border-radius: 999px;
   flex-shrink: 0;
 }
-.tally-live { background: var(--live); }
-.tally-signal { background: var(--signal); }
-.tally-alert { background: var(--alert); }
-.tally-off { background: var(--faded); opacity: 0.5; }
+.tally-live {
+  background: var(--live);
+}
+.tally-signal {
+  background: var(--signal);
+}
+.tally-alert {
+  background: var(--alert);
+}
+.tally-off {
+  background: var(--ink-faint);
+}
 
+/* ---------- Status badges ---------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge-live {
+  color: var(--live);
+  background: color-mix(in srgb, var(--live) 12%, transparent);
+  border-color: color-mix(in srgb, var(--live) 30%, transparent);
+}
+.badge-signal {
+  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  border-color: color-mix(in srgb, var(--signal) 30%, transparent);
+}
+.badge-alert {
+  color: var(--alert);
+  background: color-mix(in srgb, var(--alert) 12%, transparent);
+  border-color: color-mix(in srgb, var(--alert) 30%, transparent);
+}
+.badge-neutral {
+  color: var(--ink-dim);
+  background: color-mix(in srgb, var(--ink-faint) 16%, transparent);
+  border-color: var(--border-strong);
+}
+
+/* ---------- Form fields ---------- */
+
+.field-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--ink-dim);
+  margin-bottom: 0.375rem;
+}
 
 .input {
   width: 100%;
   min-width: 0;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
+  min-height: 2.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
   background: var(--canvas);
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
+  padding: 0.625rem 0.875rem;
+  font-size: 0.9375rem;
   color: var(--ink);
   outline: none;
+  transition: border-color 0.15s;
 }
-.input:focus { border-color: color-mix(in srgb, var(--signal) 50%, transparent); }
-.input::placeholder { color: color-mix(in srgb, var(--faded) 60%, transparent); }
+.input:hover { border-color: color-mix(in srgb, var(--signal) 30%, var(--border-strong)); }
+.input:focus { border-color: var(--signal); }
+.input::placeholder { color: var(--ink-faint); }
+
+select.input {
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--ink-dim) 50%),
+    linear-gradient(135deg, var(--ink-dim) 50%, transparent 50%);
+  background-position: calc(100% - 1.125rem) center, calc(100% - 0.75rem) center;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: 2rem;
+}
+
+/* ---------- Buttons — min 44px touch target ---------- */
 
 .btn-primary {
-  border-radius: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border-radius: var(--radius);
   background: var(--signal);
   color: #ffffff;
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
   font-weight: 500;
   cursor: pointer;
-  transition: filter 0.15s;
+  border: 1px solid transparent;
+  transition: background-color 0.15s, transform 0.1s;
 }
-.btn-primary:hover:not(:disabled) { filter: brightness(1.1); }
-.btn-primary:disabled { opacity: 0.5; filter: grayscale(0.4); cursor: not-allowed; }
+.btn-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--signal) 88%, white); }
+.btn-primary:active:not(:disabled) { transform: translateY(1px); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-secondary {
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
-  color: var(--faded);
-  padding: 0.5rem 1rem;
-  font-size: 0.875rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--ink-dim);
+  padding: 0.625rem 1.25rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.btn-secondary:hover:not(:disabled) {
+  color: var(--ink);
+  border-color: color-mix(in srgb, var(--signal) 45%, var(--border-strong));
+  background: color-mix(in srgb, var(--signal) 6%, transparent);
+}
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.5rem;
+  min-height: 2.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--ink-dim);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
-.btn-secondary:hover:not(:disabled) { color: var(--ink); border-color: color-mix(in srgb, var(--signal) 40%, transparent); }
-.btn-secondary:disabled { opacity: 0.5; filter: grayscale(0.4); cursor: not-allowed; }
+.btn-icon:hover { color: var(--ink); }
 
 button:not(:disabled) { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
+
+/* ---------- Divider ---------- */
+
+.rule {
+  height: 1px;
+  width: 100%;
+  background: var(--border);
+}

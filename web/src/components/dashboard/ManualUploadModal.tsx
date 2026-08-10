@@ -464,19 +464,19 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 sm:p-4">
-      <div className="flex h-full w-full flex-col rounded-none border-0 border-border bg-surface sm:h-[90vh] sm:max-w-5xl sm:rounded-2xl sm:border">
+      <div className="flex h-full w-full flex-col rounded-none border-0 border-border-strong bg-surface-raised sm:h-[90vh] sm:max-w-5xl sm:rounded-2xl sm:border">
         <div className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-5">
           <div>
             <h2 className="font-display text-xl text-ink">Manual upload</h2>
-            <p className="text-xs text-faded">Hand-pick content and publish it directly.</p>
+            <p className="text-xs text-ink-dim">Hand-pick content and publish it directly.</p>
           </div>
-          <button onClick={onClose} className="rounded-full border border-border p-2 text-faded hover:text-ink">
+          <button onClick={onClose} aria-label="Close" className="btn-icon">
             <X size={16} />
           </button>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3 sm:px-5">
-          <span className="text-xs text-faded">Publish to</span>
+          <span className="text-xs text-ink-dim">Publish to</span>
           <select value={botId} onChange={(e) => setBotId(e.target.value)} className="input min-w-0 flex-1 sm:max-w-xs sm:flex-none">
             {bots.map((bot) => (
               <option key={bot.id} value={bot.id}>
@@ -488,13 +488,13 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           <div className="flex gap-1 rounded-lg border border-border p-1 sm:ml-auto">
             <button
               onClick={() => setTab("vault")}
-              className={`rounded-md px-3 py-1 text-xs ${tab === "vault" ? "bg-signal text-canvas" : "text-faded"}`}
+              className={`rounded-md px-3 py-1 text-xs ${tab === "vault" ? "bg-signal text-canvas" : "text-ink-dim"}`}
             >
               Vault
             </button>
             <button
               onClick={openLiveTab}
-              className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs ${tab === "live" ? "bg-signal text-canvas" : "text-faded"}`}
+              className={`flex items-center gap-1 rounded-md px-3 py-1 text-xs ${tab === "live" ? "bg-signal text-canvas" : "text-ink-dim"}`}
             >
               <Radio size={12} /> Live
             </button>
@@ -518,13 +518,13 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                         {expanded.has(cat.category) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                         <span className="truncate">{cat.category}</span>
                       </span>
-                      <span className="shrink-0 font-data text-[11px] text-faded">
+                      <span className="shrink-0 font-data text-[11px] text-ink-dim">
                         {cat.images} img · {cat.videos} vid
                       </span>
                     </button>
                     {expanded.has(cat.category) && (
                       <div className="grid grid-cols-3 gap-2 border-t border-border p-3 md:grid-cols-4">
-                        {loadingCategory === cat.category && <p className="col-span-full text-xs text-faded">Loading…</p>}
+                        {loadingCategory === cat.category && <p className="col-span-full text-xs text-ink-dim">Loading…</p>}
                         {(itemsByCategory[cat.category] ?? []).map((item) => {
                           const isSelected = selected.has(`vault:${item.id}`);
                           return (
@@ -557,7 +557,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     )}
                   </div>
                 ))}
-                {categories.length === 0 && !error && <p className="text-sm text-faded">Loading categories…</p>}
+                {categories.length === 0 && !error && <p className="text-sm text-ink-dim">Loading categories…</p>}
               </>
             )}
 
@@ -569,17 +569,17 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                       key={p.id}
                       onClick={() => void loadLivePlatform(p.id)}
                       className={`rounded-full border px-3 py-1 text-xs ${
-                        platform === p.id ? "border-signal bg-signal/10 text-signal" : "border-border text-faded"
+                        platform === p.id ? "border-signal bg-signal/10 text-signal" : "border-border text-ink-dim"
                       }`}
                     >
                       {p.label}
                     </button>
                   ))}
                 </div>
-                {liveLoading && <p className="text-sm text-faded">Searching {platform}…</p>}
+                {liveLoading && <p className="text-sm text-ink-dim">Searching {platform}…</p>}
                 {liveError && <p className="text-xs text-alert">{liveError}</p>}
                 {!liveLoading && !liveError && liveItems.length === 0 && (
-                  <p className="text-sm text-faded">No recent {platform} content found. Try another platform.</p>
+                  <p className="text-sm text-ink-dim">No recent {platform} content found. Try another platform.</p>
                 )}
                 <div className="space-y-2">
                   {liveGroups.map((group) => {
@@ -594,7 +594,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                             <span className="truncate">@{group.handle}</span>
                           </span>
-                          <span className="shrink-0 font-data text-[11px] text-faded">{group.items.length} videos</span>
+                          <span className="shrink-0 font-data text-[11px] text-ink-dim">{group.items.length} videos</span>
                         </button>
                         {!isCollapsed && (
                           <div className="space-y-2 border-t border-border p-2">
@@ -632,7 +632,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                 return (
                 <div key={entry.key} className="rounded-lg border border-border bg-canvas p-3">
                   <div className="flex items-start justify-between gap-2">
-                    <p className="truncate text-xs text-faded">{entry.title}</p>
+                    <p className="truncate text-xs text-ink-dim">{entry.title}</p>
                     <div className="flex items-center gap-1.5">
                       {result?.status === "success" && (
                         <CheckCircle2 size={14} className="text-live" aria-label="Posted" />
@@ -649,7 +649,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     <p className="mt-1 text-[11px] text-alert">{entry.resolveError}</p>
                   )}
                   {entry.kind === "live" && entry.captionLoading && !entry.resolveError && (
-                    <p className="mt-1 text-[11px] text-faded">Resolving real video from {entry.sourceLabel}…</p>
+                    <p className="mt-1 text-[11px] text-ink-dim">Resolving real video from {entry.sourceLabel}…</p>
                   )}
                   <textarea
                     value={entry.captionLoading ? "Generating caption…" : entry.caption}
@@ -684,10 +684,10 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           title={disabledReason}
                           className={`rounded-full border px-2 py-0.5 text-[11px] transition ${
                             isDisabled
-                              ? "cursor-not-allowed border-border/40 text-faded/40"
+                              ? "cursor-not-allowed border-border/40 text-ink-dim/40"
                               : isOn
                                 ? "border-signal bg-signal/10 text-signal"
-                                : "border-border text-faded hover:text-ink"
+                                : "border-border text-ink-dim hover:text-ink"
                           }`}
                         >
                           {PUBLISH_PLATFORM_LABELS[p]}
@@ -697,16 +697,16 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     })}
                   </div>
                   {entry.platforms.length === 0 && (
-                    <p className="mt-1 text-[11px] text-alert">No platform selected — this item won&apos;t be published.</p>
+                    <p className="mt-1 text-[11px] text-alert">No platform selected - this item won&apos;t be published.</p>
                   )}
                   <div className="mt-2 flex items-center gap-2">
                     <button
                       onClick={() => setSongPickerFor(songPickerFor === entry.key ? null : entry.key)}
-                      className={`rounded-full border p-1.5 ${entry.songId || entry.noSong ? "border-live/40 text-live" : "border-border text-faded"}`}
+                      className={`rounded-full border p-1.5 ${entry.songId || entry.noSong ? "border-live/40 text-live" : "border-border text-ink-dim"}`}
                     >
                       <Music size={13} />
                     </button>
-                    <span className="text-[11px] text-faded">
+                    <span className="text-[11px] text-ink-dim">
                       {entry.noSong
                         ? "No soundtrack"
                         : entry.songId
@@ -721,7 +721,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           updateSelected(entry.key, { noSong: true, songId: null });
                           setSongPickerFor(null);
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs text-faded hover:bg-canvas"
+                        className="block w-full rounded px-2 py-1 text-left text-xs text-ink-dim hover:bg-canvas"
                       >
                         No soundtrack
                       </button>
@@ -730,7 +730,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           updateSelected(entry.key, { noSong: false, songId: null });
                           setSongPickerFor(null);
                         }}
-                        className="block w-full rounded px-2 py-1 text-left text-xs text-faded hover:bg-canvas"
+                        className="block w-full rounded px-2 py-1 text-left text-xs text-ink-dim hover:bg-canvas"
                       >
                         Auto (let it pick)
                       </button>
@@ -751,7 +751,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                 </div>
                 );
               })}
-              {selectedList.length === 0 && <p className="text-xs text-faded">Click items on the left to add them here.</p>}
+              {selectedList.length === 0 && <p className="text-xs text-ink-dim">Click items on the left to add them here.</p>}
             </div>
           </div>
         </div>
@@ -780,8 +780,8 @@ function LiveItemButton({ item, isSelected, onClick }: { item: LiveItem; isSelec
       }`}
     >
       <p className="truncate font-medium text-ink">{item.title}</p>
-      <p className="mt-1 truncate text-faded">{item.description}</p>
-      <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-faded">{item.source}</span>
+      <p className="mt-1 truncate text-ink-dim">{item.description}</p>
+      <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-ink-dim">{item.source}</span>
     </button>
   );
 }

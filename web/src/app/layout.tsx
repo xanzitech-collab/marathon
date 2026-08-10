@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import { startAutomationLoop } from "@/lib/automation-loop";
 import "./globals.css";
 
-const display = Instrument_Serif({
+const display = Space_Grotesk({
   variable: "--font-display",
-  weight: "400",
-  style: "italic",
+  weight: ["500", "600"],
   subsets: ["latin"],
 });
 
@@ -22,8 +21,8 @@ const data = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Only1Marathon Studio",
-  description: "Run your artist's Instagram channels from one control room.",
+  title: "Crew24",
+  description: "Run every artist channel from one control room - connect, schedule, and monitor social accounts in one place.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
