@@ -30,6 +30,11 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 
+# Chromium + its OS-level deps for playwright, used to screenshot X/Twitter
+# posts with an authenticated (cookie) session — no anonymous scraping API
+# exists for that, unlike TikTok/YouTube's yt-dlp path.
+RUN npx playwright install --with-deps chromium
+
 COPY . .
 
 # youtube-dl-exec's postinstall (which downloads the yt-dlp binary) already

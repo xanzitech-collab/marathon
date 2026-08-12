@@ -32,7 +32,7 @@ interface LiveItem {
   source: string;
 }
 
-type Platform = "tiktok" | "facebook" | "youtube";
+type Platform = "tiktok" | "facebook" | "youtube" | "twitter";
 
 interface SelectedEntry {
   kind: "vault" | "live";
@@ -44,6 +44,7 @@ interface SelectedEntry {
   tags: string;
   songId: string | null;
   noSong: boolean;
+  tagAccount: boolean;
   captionLoading: boolean;
   vaultItemId?: string;
   mediaAssetId?: string;
@@ -62,6 +63,7 @@ const PLATFORMS: { id: Platform; label: string }[] = [
   { id: "tiktok", label: "TikTok" },
   { id: "facebook", label: "Facebook" },
   { id: "youtube", label: "YouTube" },
+  { id: "twitter", label: "X (Twitter)" },
 ];
 
 const PUBLISH_PLATFORMS: ConnectablePlatform[] = ["instagram", "tiktok", "facebook"];
@@ -71,11 +73,22 @@ const PUBLISH_PLATFORM_LABELS: Record<ConnectablePlatform, string> = {
   facebook: "Facebook",
 };
 
+const TAG_HANDLE = "only1marathon";
+
+function withAccountTag(caption: string, enabled: boolean): string {
+  if (!enabled) return caption;
+  const tag = `@${TAG_HANDLE}`;
+  if (caption.toLowerCase().includes(tag.toLowerCase())) return caption;
+  return caption.trim().length > 0 ? `${caption.trim()}\n\n${tag}` : tag;
+}
+
 function extractSourceAccountHandle(url: string): string | null {
   const tiktokMatch = url.match(/tiktok\.com\/@([\w.-]+)/i);
   if (tiktokMatch) return tiktokMatch[1];
   const facebookMatch = url.match(/facebook\.com\/([\w.-]+)\//i);
   if (facebookMatch) return facebookMatch[1];
+  const twitterMatch = url.match(/(?:x|twitter)\.com\/([\w.-]+)\/status\//i);
+  if (twitterMatch) return twitterMatch[1];
   return null;
 }
 
@@ -283,6 +296,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       tags: "",
       songId: null,
       noSong: true,
+      tagAccount: false,
       captionLoading: true,
       vaultItemId: item.id,
       platforms: connectedPlatforms,
@@ -330,6 +344,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       tags: item.tags.join(", "),
       songId: null,
       noSong: true,
+      tagAccount: false,
       captionLoading: true,
       sourceUrl: item.url,
       sourceLabel: item.source,
@@ -414,7 +429,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
         items: [
           {
             vaultItemId: e.vaultItemId,
-            caption: e.caption,
+            caption: withAccountTag(e.caption, e.tagAccount),
             tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
             songId: e.songId,
             noSong: e.noSong,
@@ -431,7 +446,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           {
             mediaAssetId: e.mediaAssetId,
             mediaType: e.mediaType,
-            caption: e.caption,
+            caption: withAccountTag(e.caption, e.tagAccount),
             tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
             songId: e.songId,
             noSong: e.noSong,
@@ -754,6 +769,16 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           : "Auto soundtrack"}
                     </span>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => updateSelected(entry.key, { tagAccount: !entry.tagAccount })}
+                    title={`Add @${TAG_HANDLE} to the caption`}
+                    className={`mt-2 rounded-full border px-2 py-0.5 text-[11px] transition ${
+                      entry.tagAccount ? "border-signal bg-signal/10 text-signal" : "border-border text-ink-dim hover:text-ink"
+                    }`}
+                  >
+                    Tag @{TAG_HANDLE}
+                  </button>
                   {songPickerFor === entry.key && (
                     <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border border-border bg-surface p-2">
                       <button

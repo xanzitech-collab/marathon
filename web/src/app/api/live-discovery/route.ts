@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/auth";
 import { ContentDiscoveryService, type DiscoveryItem } from "@/lib/content-discovery";
 
-const ALLOWED_PLATFORMS = new Set(["tiktok", "facebook", "youtube"]);
+const ALLOWED_PLATFORMS = new Set(["tiktok", "facebook", "youtube", "twitter"]);
 
 function serializeItem(item: DiscoveryItem) {
   return { url: item.url, title: item.title, description: item.description, tags: item.tags, source: item.source };
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const platform = searchParams.get("platform");
   if (!platform || !ALLOWED_PLATFORMS.has(platform)) {
-    return Response.json({ error: "platform must be tiktok, facebook, or youtube" }, { status: 400 });
+    return Response.json({ error: "platform must be tiktok, facebook, youtube, or twitter" }, { status: 400 });
   }
 
   const discovery = new ContentDiscoveryService();
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
         controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
       };
       try {
-        await discovery.browsePlatform(platform as "tiktok" | "facebook" | "youtube", (items) => {
+        await discovery.browsePlatform(platform as "tiktok" | "facebook" | "youtube" | "twitter", (items) => {
           send({ items: items.map(serializeItem) });
         });
         send({ done: true });

@@ -15,18 +15,18 @@ const COOKIES_CACHE_TTL_MS = 5 * 60_000;
 let cachedCookiesPath: string | null | undefined;
 let cachedCookiesAt = 0;
 
-async function downloadCookiesFromSupabase(): Promise<string | null> {
+async function downloadCookiesFromSupabase(objectName: string): Promise<string | null> {
   try {
     const { createAdminClient } = await import("@/lib/supabase/admin");
     const admin = createAdminClient();
-    const { data, error } = await admin.storage.from("app-secrets").download("facebook-cookies.txt");
+    const { data, error } = await admin.storage.from("app-secrets").download(objectName);
     if (error || !data) return null;
 
     const os = await import("node:os");
     const path = await import("node:path");
     const fs = await import("node:fs/promises");
     const buffer = Buffer.from(await data.arrayBuffer());
-    const tmpPath = path.join(os.tmpdir(), "facebook-cookies.txt");
+    const tmpPath = path.join(os.tmpdir(), objectName);
     await fs.writeFile(tmpPath, buffer);
     return tmpPath;
   } catch {
@@ -39,7 +39,7 @@ async function resolveFacebookCookiesFile(): Promise<string | undefined> {
     return cachedCookiesPath ?? undefined;
   }
 
-  const fromSupabase = await downloadCookiesFromSupabase();
+  const fromSupabase = await downloadCookiesFromSupabase("facebook-cookies.txt");
   if (fromSupabase) {
     cachedCookiesPath = fromSupabase;
     cachedCookiesAt = Date.now();
@@ -93,6 +93,169 @@ async function withRetries<T>(fn: () => Promise<T>, attempts: number, delayMs: n
   throw lastError;
 }
 
+let cachedXCookiesPath: string | null | undefined;
+let cachedXCookiesAt = 0;
+
+// X serves a "log in to see this post" wall to anonymous requests (see
+// LOGIN_WALLED_HOSTS below) — an exported Netscape cookies.txt from a
+// logged-in session, uploaded from the dashboard, lets Playwright load real
+// pages instead. Mirrors resolveFacebookCookiesFile's Supabase-first flow.
+async function resolveXCookiesFile(): Promise<string | undefined> {
+  if (cachedXCookiesPath !== undefined && Date.now() - cachedXCookiesAt < COOKIES_CACHE_TTL_MS) {
+    return cachedXCookiesPath ?? undefined;
+  }
+
+  const fromSupabase = await downloadCookiesFromSupabase("x-cookies.txt");
+  cachedXCookiesPath = fromSupabase ?? null;
+  cachedXCookiesAt = Date.now();
+  return fromSupabase ?? undefined;
+}
+
+interface PlaywrightCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires: number;
+  httpOnly: boolean;
+  secure: boolean;
+}
+
+// Netscape cookies.txt format: domain, includeSubdomains, path, secure,
+// expiry, name, value — tab-separated, with an optional leading
+// "#HttpOnly_" marking a cookie as HttpOnly (the convention curl/yt-dlp/
+// browser export extensions all use).
+async function parseNetscapeCookiesForPlaywright(filePath: string): Promise<PlaywrightCookie[]> {
+  const fs = await import("node:fs/promises");
+  const raw = await fs.readFile(filePath, "utf8");
+  const cookies: PlaywrightCookie[] = [];
+
+  for (const rawLine of raw.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) continue;
+    const httpOnly = line.startsWith("#HttpOnly_");
+    const fields = (httpOnly ? line.slice("#HttpOnly_".length) : line).split("\t");
+    if (fields.length < 7) continue;
+    const [domain, , path, secure, expiry, name, value] = fields;
+    if (!name) continue;
+    cookies.push({
+      name,
+      value: value ?? "",
+      domain,
+      path: path || "/",
+      expires: Number(expiry) || -1,
+      httpOnly,
+      secure: secure?.toUpperCase() === "TRUE",
+    });
+  }
+
+  return cookies;
+}
+
+// Screenshotting one tweet at a time (rather than the whole timeline while
+// listing) keeps browser launches cheap and rare — only the single item the
+// user actually selects in the Live tab gets the full authenticated
+// Playwright treatment, matching the "resolve on selection" pattern the
+// TikTok/Facebook live-resolve flow already uses.
+async function screenshotTweetViaPlaywright(tweetUrl: string): Promise<string | null> {
+  const cookiesFile = await resolveXCookiesFile();
+  if (!cookiesFile) {
+    console.warn("[discovery-media] No X cookies uploaded — cannot screenshot authenticated tweet content.");
+    return null;
+  }
+
+  let browser: import("playwright").Browser | null = null;
+  try {
+    const { chromium } = await import("playwright");
+    const cookies = await parseNetscapeCookiesForPlaywright(cookiesFile);
+
+    browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+    const context = await browser.newContext({ viewport: { width: 700, height: 1200 } });
+    await context.addCookies(cookies);
+    const page = await context.newPage();
+    await page.goto(tweetUrl, { waitUntil: "domcontentloaded", timeout: 30_000 });
+
+    const article = await page.waitForSelector('article[data-testid="tweet"]', { timeout: 15_000 });
+    const buffer = await article.screenshot({ type: "png" });
+
+    const { createAdminClient } = await import("@/lib/supabase/admin");
+    const admin = createAdminClient();
+    const storagePath = `twitter-screenshots/${Date.now()}-${Math.random().toString(36).slice(2)}.png`;
+    const { error: uploadError } = await admin.storage.from("bot-media").upload(storagePath, buffer, {
+      contentType: "image/png",
+      upsert: false,
+    });
+    if (uploadError) throw new Error(uploadError.message);
+
+    const { data: signed, error: signError } = await admin.storage.from("bot-media").createSignedUrl(storagePath, 3600);
+    if (signError || !signed?.signedUrl) throw new Error(signError?.message ?? "Could not sign tweet screenshot");
+    return signed.signedUrl;
+  } catch (error) {
+    console.warn(`[discovery-media] Tweet screenshot failed for ${tweetUrl}: ${error instanceof Error ? error.message : String(error)}`);
+    return null;
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
+/**
+ * Lists recent tweet permalinks + text from a profile timeline using an
+ * authenticated Playwright session (same cookies as screenshotTweetViaPlaywright).
+ * Cheap relative to per-tweet screenshotting: one browser launch scrolls the
+ * timeline and reads DOM text/links, no image capture happens here.
+ */
+export async function listRecentTweets(
+  handle: string,
+  limit: number,
+): Promise<Array<{ url: string; text: string }>> {
+  const cookiesFile = await resolveXCookiesFile();
+  if (!cookiesFile) {
+    console.warn("[discovery-media] No X cookies uploaded — skipping Twitter/X discovery.");
+    return [];
+  }
+
+  let browser: import("playwright").Browser | null = null;
+  try {
+    const { chromium } = await import("playwright");
+    const cookies = await parseNetscapeCookiesForPlaywright(cookiesFile);
+
+    browser = await chromium.launch({ headless: true, args: ["--no-sandbox", "--disable-dev-shm-usage"] });
+    const context = await browser.newContext({ viewport: { width: 800, height: 1000 } });
+    await context.addCookies(cookies);
+    const page = await context.newPage();
+    await page.goto(`https://x.com/${handle}`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.waitForSelector('article[data-testid="tweet"]', { timeout: 20_000 }).catch(() => null);
+
+    const results = new Map<string, string>();
+    for (let scroll = 0; scroll < 6 && results.size < limit; scroll++) {
+      const batch = await page.evaluate(() => {
+        const articles = Array.from(document.querySelectorAll('article[data-testid="tweet"]'));
+        return articles.map((article) => {
+          const link = article.querySelector('a[href*="/status/"]') as HTMLAnchorElement | null;
+          const textEl = article.querySelector('[data-testid="tweetText"]');
+          return { href: link?.href ?? "", text: textEl?.textContent ?? "" };
+        });
+      });
+
+      for (const item of batch) {
+        if (item.href && !results.has(item.href)) results.set(item.href, item.text);
+      }
+
+      await page.mouse.wheel(0, 2000);
+      await page.waitForTimeout(1200);
+    }
+
+    return Array.from(results.entries())
+      .slice(0, limit)
+      .map(([url, text]) => ({ url, text }));
+  } catch (error) {
+    console.warn(`[discovery-media] Twitter/X timeline listing failed for @${handle}: ${error instanceof Error ? error.message : String(error)}`);
+    return [];
+  } finally {
+    await browser?.close().catch(() => {});
+  }
+}
+
 function isTikTokUrl(url: string): boolean {
   try {
     return new URL(url).hostname.toLowerCase().includes("tiktok.com");
@@ -120,6 +283,19 @@ function isFacebookVideoUrl(url: string): boolean {
     const host = parsed.hostname.toLowerCase();
     if (!(host === "facebook.com" || host.endsWith(".facebook.com"))) return false;
     return /\/(videos|reel|watch)\/([^/?]*\d)/i.test(parsed.pathname) || parsed.searchParams.has("v");
+  } catch {
+    return false;
+  }
+}
+
+// A specific tweet permalink (x.com/<handle>/status/<id>), as opposed to a
+// bare profile URL — only these are worth screenshotting.
+function isTwitterStatusUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (!(host === "x.com" || host === "twitter.com" || host.endsWith(".x.com") || host.endsWith(".twitter.com"))) return false;
+    return /\/status\/\d+/i.test(parsed.pathname);
   } catch {
     return false;
   }
@@ -406,6 +582,18 @@ export async function extractMediaFromUrl(sourceUrl: string): Promise<string | n
     }
 
     console.warn(`[discovery-media] Skipping Facebook item (no real footage extractable, thumbnails are not allowed): ${normalizedSource}`);
+    return null;
+  }
+
+  // X/Twitter: a tweet is text + an image, not downloadable "footage" like
+  // TikTok/YouTube/Facebook — a real authenticated screenshot of the tweet
+  // itself is the correct media here, not a rule violation like it would be
+  // for the video platforms above.
+  if (isTwitterStatusUrl(normalizedSource)) {
+    const screenshotUrl = await screenshotTweetViaPlaywright(normalizedSource);
+    if (screenshotUrl) return screenshotUrl;
+
+    console.warn(`[discovery-media] Skipping Twitter/X item (no cookies configured or screenshot failed): ${normalizedSource}`);
     return null;
   }
 

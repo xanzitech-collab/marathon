@@ -1,7 +1,7 @@
 import { ARTIST_CONTEXT } from "@/lib/artist";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { pickMemeVaultItems } from "@/lib/meme-vault";
-import { extractTikTokProfileVideos } from "@/lib/discovery-media";
+import { extractTikTokProfileVideos, listRecentTweets } from "@/lib/discovery-media";
 
 export interface DiscoveryItem {
   title: string;
@@ -91,6 +91,7 @@ export class ContentDiscoveryService {
   private readonly tiktokHandle = ARTIST_CONTEXT.tiktokHandle;
   private readonly facebookHandle = ARTIST_CONTEXT.facebookHandle;
   private readonly youtubeHandle = ARTIST_CONTEXT.youtubeHandle;
+  private readonly twitterHandle = ARTIST_CONTEXT.twitterHandle;
   private readonly songs = ARTIST_CONTEXT.songs;
 
   /**
@@ -105,7 +106,7 @@ export class ContentDiscoveryService {
    * before seeing anything, which is how this used to work.
    */
   async browsePlatform(
-    platform: "tiktok" | "facebook" | "youtube",
+    platform: "tiktok" | "facebook" | "youtube" | "twitter",
     onBatch?: (items: DiscoveryItem[]) => void,
   ): Promise<DiscoveryItem[]> {
     const seen = new Set<string>();
@@ -131,6 +132,10 @@ export class ContentDiscoveryService {
     }
     if (platform === "facebook") {
       await this.crawlFacebookVideos(emit);
+      return this.shuffle(this.deduplicate(all));
+    }
+    if (platform === "twitter") {
+      await this.crawlTwitterProfile(emit);
       return this.shuffle(this.deduplicate(all));
     }
     await this.crawlYouTubeSearch(emit);
@@ -607,6 +612,30 @@ export class ContentDiscoveryService {
       if (batch.length > 0) onBatch?.(batch);
     }
 
+    return items;
+  }
+
+  // Twitter/X has no anonymous scraping path (login-walled), so this relies
+  // on an authenticated Playwright session using dashboard-uploaded cookies
+  // (see discovery-media.ts's listRecentTweets). Only lists permalinks/text
+  // here — the actual screenshot only happens for the one item the user
+  // selects in the Live tab (extractMediaFromUrl's Twitter branch).
+  private async crawlTwitterProfile(onBatch?: (items: DiscoveryItem[]) => void): Promise<DiscoveryItem[]> {
+    const tweets = await listRecentTweets(this.twitterHandle, 20);
+    const items: DiscoveryItem[] = tweets.map((tweet) => {
+      const title = tweet.text.trim().slice(0, 120) || `${this.artistName} tweet`;
+      return {
+        title,
+        description: tweet.text.trim() || title,
+        url: tweet.url,
+        source: "Twitter",
+        mediaType: "social_post" as const,
+        relevanceScore: 90,
+        tags: ["fan_engagement", "twitter", "official"],
+      };
+    });
+
+    if (items.length > 0) onBatch?.(items);
     return items;
   }
 

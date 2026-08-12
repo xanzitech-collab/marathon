@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Cookie, Settings, X } from "lucide-react";
+import { Cookie, Settings, X, AtSign } from "lucide-react";
 import type { BotWithHealth } from "@/types/app";
 import { BotCard } from "@/components/dashboard/BotCard";
 import { ManualUploadModal } from "@/components/dashboard/ManualUploadModal";
@@ -28,6 +28,11 @@ function DashboardPageInner() {
   const [cookiesError, setCookiesError] = useState<string | null>(null);
   const [cookiesUploadedMessage, setCookiesUploadedMessage] = useState<string | null>(null);
   const cookiesInputRef = useRef<HTMLInputElement | null>(null);
+  const [xCookiesStatus, setXCookiesStatus] = useState<{ exists: boolean; updatedAt: string | null } | null>(null);
+  const [xCookiesUploading, setXCookiesUploading] = useState(false);
+  const [xCookiesError, setXCookiesError] = useState<string | null>(null);
+  const [xCookiesUploadedMessage, setXCookiesUploadedMessage] = useState<string | null>(null);
+  const xCookiesInputRef = useRef<HTMLInputElement | null>(null);
   const [manualUploadOpen, setManualUploadOpen] = useState(false);
   const gearClickCountRef = useRef(0);
   const gearClickTimerRef = useRef<number | null>(null);
@@ -83,10 +88,38 @@ function DashboardPageInner() {
     }
   };
 
+  const fetchXCookiesStatus = async () => {
+    const res = await fetch("/api/settings/x-cookies", { cache: "no-store" });
+    const data = await res.json();
+    if (res.ok) setXCookiesStatus({ exists: Boolean(data.exists), updatedAt: data.updatedAt ?? null });
+  };
+
+  const uploadXCookiesFile = async (file: File) => {
+    setXCookiesUploading(true);
+    setXCookiesError(null);
+    setXCookiesUploadedMessage(null);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await fetch("/api/settings/x-cookies", { method: "POST", body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed.");
+      await fetchXCookiesStatus();
+      setXCookiesUploadedMessage("X/Twitter cookies uploaded and connected.");
+      window.setTimeout(() => setXCookiesUploadedMessage(null), 5000);
+    } catch (error) {
+      setXCookiesError(error instanceof Error ? error.message : "Upload failed.");
+    } finally {
+      setXCookiesUploading(false);
+      if (xCookiesInputRef.current) xCookiesInputRef.current.value = "";
+    }
+  };
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchBots();
     void fetchCookiesStatus();
+    void fetchXCookiesStatus();
   }, []);
 
   const live = 502; //useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
@@ -218,6 +251,45 @@ function DashboardPageInner() {
               }}
             />
 
+            <button
+              onClick={() => xCookiesInputRef.current?.click()}
+              disabled={xCookiesUploading}
+              title={
+                xCookiesUploading
+                  ? "Uploading…"
+                  : xCookiesStatus?.exists
+                    ? `X/Twitter cookies set (updated ${xCookiesStatus.updatedAt ? new Date(xCookiesStatus.updatedAt).toLocaleString() : "recently"}). Click to replace.`
+                    : "No X/Twitter cookies uploaded yet. Click to upload a cookies.txt so X posts can be screenshotted."
+              }
+              className={`btn-secondary gap-2 px-3 py-2 text-xs sm:text-sm ${
+                xCookiesStatus?.exists ? "border-live/40 text-live" : ""
+              }`}
+            >
+              <span className="relative flex items-center">
+                <AtSign size={16} />
+                <span
+                  className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-canvas ${
+                    xCookiesStatus?.exists ? "bg-live" : "bg-ink-faint"
+                  }`}
+                />
+              </span>
+              <span className="hidden sm:inline">
+                {xCookiesUploading ? "Uploading…" : xCookiesStatus?.exists ? "X cookies connected" : "X cookies not set"}
+              </span>
+              <span className="sm:hidden">{xCookiesUploading ? "Uploading…" : "X cookies"}</span>
+            </button>
+
+            <input
+              ref={xCookiesInputRef}
+              type="file"
+              accept=".txt,text/plain"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void uploadXCookiesFile(file);
+              }}
+            />
+
             <button onClick={logout} className="btn-secondary px-4 py-2 text-sm">
               Sign out
             </button>
@@ -232,6 +304,16 @@ function DashboardPageInner() {
         {cookiesError && (
           <div className="shell pb-3">
             <p className="text-xs text-alert">{cookiesError}</p>
+          </div>
+        )}
+        {xCookiesUploadedMessage && (
+          <div className="shell pb-3">
+            <p className="text-xs text-live">{xCookiesUploadedMessage}</p>
+          </div>
+        )}
+        {xCookiesError && (
+          <div className="shell pb-3">
+            <p className="text-xs text-alert">{xCookiesError}</p>
           </div>
         )}
       </header>
