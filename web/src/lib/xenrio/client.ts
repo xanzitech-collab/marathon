@@ -8,6 +8,7 @@ export interface XenrioPublishTarget {
 export interface XenrioPublishInput {
   targets: XenrioPublishTarget[];
   caption: string;
+  captionsByPlatform?: Partial<Record<XenrioPlatform, string>>;
   surface: "feed" | "reel" | "story";
   mediaUrl?: string;
   mediaType?: "image" | "video";
@@ -386,7 +387,6 @@ export class XenrioClient {
   // failure on one platform can never take the others down with it.
   private async publishEachIndividually(
     targets: XenrioPublishTarget[],
-    content: string,
     input: XenrioPublishInput,
     inferredMediaType: "image" | "video",
     skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string; rateLimitedUntil?: string }>,
@@ -401,6 +401,7 @@ export class XenrioClient {
     for (const target of targets) {
       try {
         const tiktokSettings = this.buildTikTokSettings([target], inferredMediaType);
+        const content = input.captionsByPlatform?.[target.platform] ?? input.caption;
         const payload = await this.request<CreatePostResponse>("/posts", {
           method: "POST",
           body: JSON.stringify({
@@ -443,6 +444,10 @@ export class XenrioClient {
 
     let remainingTargets = [...input.targets];
     const skipped: Array<{ platform: XenrioPlatform; accountId: string; reason: string; rateLimitedUntil?: string }> = [];
+
+    if (input.captionsByPlatform) {
+      return this.publishEachIndividually(remainingTargets, input, inferredMediaType, skipped);
+    }
 
     // A single blocked/rate-limited platform makes Zernio reject the WHOLE
     // multi-platform request — retry with just that target dropped instead of
@@ -507,7 +512,7 @@ export class XenrioClient {
         // than one still queued, don't lose all of them to an unexplained
         // error; fall back to one request per remaining platform instead.
         if (remainingTargets.length > 1) {
-          return await this.publishEachIndividually(remainingTargets, content, input, inferredMediaType, skipped);
+          return await this.publishEachIndividually(remainingTargets, input, inferredMediaType, skipped);
         }
 
         throw error;

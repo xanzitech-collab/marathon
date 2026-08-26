@@ -122,10 +122,11 @@ function DashboardPageInner() {
     void fetchXCookiesStatus();
   }, []);
 
-  const live = 502; //useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
-  // const live = useMemo(() => bots.filter((b) => b.is_active).length, [bots]);
-  const ready = 502; //useMemo(() => bots.filter((b) => b.health.isReady).length, [bots]);
-  // const ready = useMemo(() => bots.filter((b) => b.health.isReady).length, [bots]);
+  const live = useMemo(
+    () => bots.filter((bot) => bot.is_active && bot.health.anyPlatformConnected && bot.health.isReady).length,
+    [bots],
+  );
+  const ready = useMemo(() => bots.filter((bot) => bot.health.isReady).length, [bots]);
 
   const toast = useMemo(() => {
     const connectError = searchParams.get("connectError");
@@ -405,7 +406,7 @@ function DashboardPageInner() {
           {bots.map((bot) => (
             <BotCard key={bot.id} bot={bot} onUpdated={fetchBots} />
           ))}
-          {!bots.length && (
+          {!apiError && !bots.length && (
             <div className="panel border-dashed p-10 text-center">
               <p className="font-display text-xl text-ink">No channels yet</p>
               <p className="mt-2 text-sm text-ink-dim">

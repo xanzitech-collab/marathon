@@ -80,6 +80,9 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [newCommentText, setNewCommentText] = useState<Record<string, string>>({});
   const [commentPosting, setCommentPosting] = useState<string | null>(null);
+  const [editingQueueCaptionId, setEditingQueueCaptionId] = useState<string | null>(null);
+  const [queueCaptionText, setQueueCaptionText] = useState("");
+  const [queueCaptionSaving, setQueueCaptionSaving] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [media, setMedia] = useState<MediaAsset[]>([]);
@@ -335,20 +338,13 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     setAutomationLoading(true);
     setQueueActionMessage(null);
     try {
-      const discoveryResult = await safeFetchJson<{ discovered?: number; queued?: number; skipped?: number; error?: string }>(
-        `/api/bots/${bot.id}/discover`,
-        { method: "POST" },
-      );
-      const tickResult = await safeFetchJson<{ processed?: number; error?: string }>(`/api/scheduler/tick`, { method: "POST" });
-
-      if (!discoveryResult.ok || !tickResult.ok) {
-        throw new Error(discoveryResult.error || tickResult.error || "The run didn't complete.");
+      const tickResult = await safeFetchJson<{ accepted?: boolean; message?: string; error?: string }>(`/api/scheduler/tick?background=1`, {
+        method: "POST",
+      });
+      if (!tickResult.ok) {
+        throw new Error(tickResult.error || "The automation run didn't start.");
       }
-
-      const discovered = typeof discoveryResult.data?.discovered === "number" ? discoveryResult.data.discovered : 0;
-      const queued = typeof discoveryResult.data?.queued === "number" ? discoveryResult.data.queued : 0;
-      const skipped = typeof discoveryResult.data?.skipped === "number" ? discoveryResult.data.skipped : 0;
-      setQueueActionMessage(`Found ${discovered}, queued ${queued}, skipped ${skipped}.`);
+      setQueueActionMessage(tickResult.data?.message || "Automation started. The queue will update as work completes.");
       await loadQueue();
       await onUpdated();
     } catch (error) {
@@ -508,6 +504,27 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
     }
     setQueueActionMessage(`Cleared ${result.data?.removed ?? 0} ${scope === "queue" ? "queued" : "log"} item(s).`);
     await loadQueue();
+  };
+
+  const saveQueueCaption = async (queueItemId: string) => {
+    if (!queueCaptionText.trim()) return;
+    setQueueCaptionSaving(true);
+    setQueueActionMessage(null);
+    try {
+      const result = await safeFetchJson<{ error?: string }>(`/api/bots/${bot.id}/queue`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queueItemId, caption: queueCaptionText }),
+      });
+      if (!result.ok) {
+        setQueueActionMessage(result.error || "Couldn't save the caption.");
+        return;
+      }
+      setEditingQueueCaptionId(null);
+      await loadQueue();
+    } finally {
+      setQueueCaptionSaving(false);
+    }
   };
 
   const isLive = bot.is_active && bot.health.anyPlatformConnected && bot.health.isReady;
@@ -784,7 +801,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
           )}
 
           {tab === "media" && (
-            <MediaTab botId={bot.id} media={media} onReload={loadMedia} songs={songs} onReloadSongs={loadSongs} />
+            <MediaTab botId={bot.id} media={media} onReload={loadMedia} songs={songs} />
           )}
 
           {tab === "activity" && (
@@ -859,7 +876,40 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
                             {formatActivityTime(item.published_at ?? item.updated_at ?? item.created_at)}
                           </span>
                         </div>
-                        <p className="mt-1.5 text-sm text-ink">{item.generated_caption || "No caption yet"}</p>
+                        {editingQueueCaptionId === item.id ? (
+                          <div className="mt-2">
+                            <textarea
+                              value={queueCaptionText}
+                              onChange={(event) => setQueueCaptionText(event.target.value)}
+                              rows={4}
+                              maxLength={2200}
+                              className="input resize-none text-sm"
+                            />
+                            <div className="mt-2 flex gap-2">
+                              <button onClick={() => void saveQueueCaption(item.id)} disabled={queueCaptionSaving || !queueCaptionText.trim()} className="btn-primary text-xs">
+                                {queueCaptionSaving ? "Saving…" : "Save caption"}
+                              </button>
+                              <button onClick={() => setEditingQueueCaptionId(null)} disabled={queueCaptionSaving} className="btn-secondary text-xs">
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <p className="mt-1.5 text-sm text-ink">{item.generated_caption || "No caption yet"}</p>
+                            {item.status !== "posted" && (
+                              <button
+                                onClick={() => {
+                                  setEditingQueueCaptionId(item.id);
+                                  setQueueCaptionText(item.generated_caption || "");
+                                }}
+                                className="mt-2 flex items-center gap-1 text-xs text-ink-dim hover:text-ink"
+                              >
+                                <Pencil size={12} /> Edit caption
+                              </button>
+                            )}
+                          </>
+                        )}
                         {item.status === "failed" && item.error_message && (
                           <p className="mt-1 text-xs text-alert">{item.error_message}</p>
                         )}
@@ -1050,10 +1100,9 @@ interface MediaTabProps {
   media: MediaAsset[];
   onReload: () => Promise<void>;
   songs: Song[];
-  onReloadSongs: () => Promise<void>;
 }
 
-function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProps) {
+function MediaTab({ botId, media, onReload, songs }: MediaTabProps) {
   const [url, setUrl] = useState("");
   const [caption, setCaption] = useState("");
   const [tags, setTags] = useState("");
@@ -1062,13 +1111,7 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [fileName, setFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [songTitle, setSongTitle] = useState("");
-  const [songFileName, setSongFileName] = useState("");
-  const [songUploading, setSongUploading] = useState(false);
-  const [songError, setSongError] = useState<string | null>(null);
-  const songFileInputRef = useRef<HTMLInputElement | null>(null);
   const [deletingMediaId, setDeletingMediaId] = useState<string | null>(null);
-  const [deletingSongId, setDeletingSongId] = useState<string | null>(null);
 
   const addMedia = async () => {
     if ((!url || !caption || !tags) && !fileName) return;
@@ -1131,49 +1174,6 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
     }
   };
 
-  const addSong = async () => {
-    const file = songFileInputRef.current?.files?.[0];
-    if (!file) return;
-    setSongUploading(true);
-    setSongError(null);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (songTitle.trim()) formData.append("title", songTitle.trim());
-      const result = await safeFetchJson<{ song?: Song; error?: string }>(`/api/bots/${botId}/songs`, {
-        method: "POST",
-        body: formData,
-      });
-      if (!result.ok) throw new Error(result.error || "Upload failed.");
-      setSongTitle("");
-      setSongFileName("");
-      if (songFileInputRef.current) songFileInputRef.current.value = "";
-      await onReloadSongs();
-    } catch (error) {
-      setSongError(error instanceof Error ? error.message : "Upload failed.");
-    } finally {
-      setSongUploading(false);
-    }
-  };
-
-  const deleteSong = async (id: string) => {
-    if (deletingSongId) return;
-    setSongError(null);
-    setDeletingSongId(id);
-    try {
-      const deleteResult = await safeFetchJson<{ success?: boolean; error?: string }>(`/api/bots/${botId}/songs?songId=${id}`, {
-        method: "DELETE",
-      });
-      if (!deleteResult.ok) {
-        setSongError(deleteResult.error || "Couldn't remove that.");
-        return;
-      }
-      await onReloadSongs();
-    } finally {
-      setDeletingSongId(null);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="rounded-xl border border-border bg-canvas p-4 text-sm">
@@ -1212,28 +1212,10 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
       </div>
 
       <div className="rounded-xl border border-border bg-canvas p-4 text-sm">
-        <p className="font-medium text-ink">Upload soundtracks</p>
+        <p className="font-medium text-ink">Soundtracks</p>
         <p className="mt-1 text-xs text-ink-dim">
-          Add your own songs to this channel&apos;s music vault - mp3, wav, m4a, aac, ogg, flac, mp4 and webm are all fine.
-          Leave the name blank to keep the file&apos;s own name.
+          Loaded from the local music library shared by every channel.
         </p>
-        {songError && <p className="mt-2 text-xs text-alert">{songError}</p>}
-      </div>
-      <div className="grid gap-2 md:grid-cols-4">
-        <input value={songTitle} onChange={(e) => setSongTitle(e.target.value)} placeholder="Song name (optional)" className="input md:col-span-2" />
-        <label className="btn-secondary flex cursor-pointer items-center justify-center text-center md:col-span-2">
-          {songFileName || "Choose audio file"}
-          <input
-            ref={songFileInputRef}
-            type="file"
-            accept=".mp3,.wav,.m4a,.aac,.ogg,.flac,.mp4,.webm,audio/*"
-            onChange={(e) => setSongFileName(e.target.files?.[0]?.name ?? "")}
-            className="hidden"
-          />
-        </label>
-        <button onClick={addSong} disabled={songUploading || !songFileName} className="btn-primary md:col-span-4">
-          {songUploading ? "Uploading…" : "Add song"}
-        </button>
       </div>
 
       <div className="grid gap-2 md:grid-cols-3">
@@ -1243,12 +1225,9 @@ function MediaTab({ botId, media, onReload, songs, onReloadSongs }: MediaTabProp
             <p className="text-xs text-ink-dim">
               {song.duration_seconds ? `${Math.round(song.duration_seconds)}s` : "Unknown length"} · {song.mood ?? "neutral"}
             </p>
-            <button onClick={() => deleteSong(song.id)} disabled={deletingSongId === song.id} className="mt-2 text-xs text-alert hover:underline disabled:no-underline">
-              {deletingSongId === song.id ? "Removing…" : "Remove"}
-            </button>
           </div>
         ))}
-        {!songs.length && <p className="text-sm text-ink-dim">No uploaded songs yet.</p>}
+        {!songs.length && <p className="text-sm text-ink-dim">No local soundtracks found.</p>}
       </div>
     </div>
   );

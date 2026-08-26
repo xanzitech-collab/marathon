@@ -38,6 +38,17 @@ export async function runAutomationCycle() {
     let published = 0;
 
     for (const bot of bots ?? []) {
+      // Browser disconnects do not cancel an in-process publish, but a server
+      // restart or terminated request can leave its durable queue item claimed
+      // as publishing. Return only stale claims to queued work for retry.
+      const stalePublishingThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      await supabase
+        .from("content_queue")
+        .update({ status: "queued", error_message: "Recovered after an interrupted publish attempt; retrying automatically." })
+        .eq("bot_id", bot.id)
+        .eq("status", "publishing")
+        .lt("updated_at", stalePublishingThreshold);
+
       const { data: windows } = await supabase.from("bot_posting_windows").select("*").eq("bot_id", bot.id);
       const postingWindows = windows && windows.length > 0 ? windows : await ensureDefaultPostingWindows(supabase, bot.id);
       const now = new Date();

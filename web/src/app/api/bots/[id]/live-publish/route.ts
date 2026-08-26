@@ -20,6 +20,7 @@ interface LiveItemInput {
   tags: string[];
   songId: string | null;
   noSong: boolean;
+  soundtrackMix: number;
   sourceUrl: string;
   sourceLabel: string;
   discoveryTitle?: string | null;
@@ -66,6 +67,7 @@ export async function POST(request: Request, { params }: Params) {
           tags: input.tags,
           songId: input.songId,
           noSong: input.noSong,
+          soundtrackMix: input.soundtrackMix,
           source: input.sourceLabel || "Live",
           discoveryTitle: input.discoveryTitle,
           discoveryDescription: input.discoveryDescription,

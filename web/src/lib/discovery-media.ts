@@ -432,13 +432,14 @@ export async function extractTikTokProfileVideos(
         noWarnings: true,
         flatPlaylist: true,
         playlistEnd: limit,
-      })) as { entries?: Array<{ id?: string; webpage_url?: string; url?: string; title?: string }> };
+      })) as { entries?: Array<{ id?: string; webpage_url?: string; url?: string; title?: string; thumbnail?: string }> };
 
       return (info.entries ?? [])
         .map((entry) => ({
           id: entry.id ?? "",
           url: entry.webpage_url ?? entry.url ?? "",
           title: entry.title ?? "",
+          thumbnailUrl: entry.thumbnail ?? "",
         }))
         .filter((entry) => entry.id && entry.url);
     }, 3, 1500);

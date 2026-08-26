@@ -1,12 +1,12 @@
+import path from "node:path";
+import { promises as fs } from "node:fs";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { queueAndPublishManualItem } from "@/lib/manual-queue";
-import { markVaultItemPosted } from "@/lib/meme-vault";
+import { findLocalVaultItem } from "@/lib/meme-vault";
 import { isConnectablePlatform } from "@/lib/platform-accounts";
 import type { ConnectablePlatform } from "@/types/app";
-
-const VAULT_BUCKET = process.env.SUPABASE_MEME_VAULT_BUCKET ?? "meme-vault";
 
 function isConnectablePlatformArray(value: unknown): value is ConnectablePlatform[] {
   return Array.isArray(value) && value.length > 0 && value.every((v) => typeof v === "string" && isConnectablePlatform(v));
@@ -22,6 +22,7 @@ interface ManualItemInput {
   tags: string[];
   songId: string | null;
   noSong: boolean;
+  soundtrackMix: number;
   platforms?: string[];
 }
 
@@ -57,26 +58,13 @@ export async function POST(request: Request, { params }: Params) {
       results.push(result);
 
       try {
-        const { data: vaultItem, error: vaultError } = await admin
-          .from("meme_vault_items")
-          .select("*")
-          .eq("id", input.vaultItemId)
-          .single();
-        if (vaultError || !vaultItem) throw new Error("Vault item not found");
-
-        const { data: signed, error: signError } = await admin.storage
-          .from(VAULT_BUCKET)
-          .createSignedUrl(vaultItem.storage_path, 3600);
-        if (signError || !signed?.signedUrl) throw new Error(signError?.message ?? "Could not sign vault media");
-
-        const response = await fetch(signed.signedUrl, { signal: AbortSignal.timeout(60_000) });
-        if (!response.ok) throw new Error(`Vault media download failed (${response.status})`);
-        const buffer = Buffer.from(await response.arrayBuffer());
-
-        const ext = vaultItem.media_type === "video" ? "mp4" : (vaultItem.storage_path.split(".").pop() ?? "jpg");
+        const vaultItem = await findLocalVaultItem(input.vaultItemId);
+        if (!vaultItem) throw new Error("Local vault item not found");
+        const buffer = await fs.readFile(vaultItem.localMediaPath);
+        const ext = path.extname(vaultItem.filename).slice(1) || (vaultItem.mediaType === "video" ? "mp4" : "jpg");
         const storagePath = `${user.id}/${id}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
         const { error: uploadError } = await admin.storage.from("bot-media").upload(storagePath, buffer, {
-          contentType: vaultItem.media_type === "video" ? "video/mp4" : "image/jpeg",
+          contentType: vaultItem.mediaType === "video" ? "video/mp4" : "image/jpeg",
           upsert: false,
         });
         if (uploadError) throw new Error(uploadError.message);
@@ -94,8 +82,8 @@ export async function POST(request: Request, { params }: Params) {
             bot_id: id,
             storage_path: storagePath,
             public_url: signedBotMedia.signedUrl,
-            media_type: vaultItem.media_type,
-            media_context_caption: vaultItem.original_filename,
+            media_type: vaultItem.mediaType,
+            media_context_caption: vaultItem.filename,
             tags,
             is_ready: true,
             is_used: false,
@@ -106,19 +94,19 @@ export async function POST(request: Request, { params }: Params) {
         if (mediaAssetError || !mediaAsset?.id) throw new Error(mediaAssetError?.message ?? "Could not create media asset");
 
         result.queued = true;
-        await markVaultItemPosted(admin, vaultItem.id);
 
         const manualResult = await queueAndPublishManualItem(admin, bot, {
           botId: id,
           mediaAssetId: mediaAsset.id,
-          mediaType: vaultItem.media_type,
+          mediaType: vaultItem.mediaType,
           caption: input.caption,
           tags,
           songId: input.songId,
           noSong: input.noSong,
+          soundtrackMix: input.soundtrackMix,
           source: "MemeVault",
-          discoveryTitle: vaultItem.original_filename,
-          discoveryDescription: vaultItem.context_text,
+          discoveryTitle: vaultItem.filename,
+          discoveryDescription: vaultItem.contextText,
           extraMetadata: { vault_item_id: vaultItem.id },
           targetPlatforms: isConnectablePlatformArray(input.platforms) ? input.platforms : undefined,
         });

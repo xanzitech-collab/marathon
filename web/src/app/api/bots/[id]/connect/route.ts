@@ -25,7 +25,7 @@ function parsePlatform(value: string | null): ConnectablePlatform {
   return "instagram";
 }
 
-async function startConnectFlow(id: string, platform: ConnectablePlatform) {
+async function startConnectFlow(request: Request, id: string, platform: ConnectablePlatform) {
   const { supabase, user } = await requireUser();
 
   const { data: bot, error: botError } = await supabase
@@ -41,7 +41,6 @@ async function startConnectFlow(id: string, platform: ConnectablePlatform) {
 
   const { xenrio } = getApiKeysBySlot(bot.api_slot);
   const zernioClient = new XenrioClient(xenrio);
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
   let profileId = bot.zernio_profile_id;
 
@@ -57,7 +56,7 @@ async function startConnectFlow(id: string, platform: ConnectablePlatform) {
     profileId = created.profileId;
   }
 
-  const callbackUrl = `${appUrl}/api/zernio/callback?botId=${encodeURIComponent(bot.id)}`;
+  const callbackUrl = `${new URL(request.url).origin}/api/zernio/callback?botId=${encodeURIComponent(bot.id)}`;
   // Platform travels in state (colon-separated) so the callback knows which
   // platform this OAuth round-trip was for — one profile connects to all
   // three platforms independently, each with its own connect/callback pass.
@@ -97,7 +96,7 @@ export async function GET(request: Request, { params }: Params) {
       return NextResponse.json({ error: "GET supports only mode=start" }, { status: 400 });
     }
 
-    const started = await startConnectFlow(id, platform);
+    const started = await startConnectFlow(request, id, platform);
     if (started instanceof NextResponse) {
       return started;
     }
@@ -185,7 +184,7 @@ export async function POST(request: Request, { params }: Params) {
     const platform = payload.platform;
 
     if (payload.mode === "start") {
-      const started = await startConnectFlow(id, platform);
+      const started = await startConnectFlow(request, id, platform);
       if (started instanceof NextResponse) {
         return started;
       }

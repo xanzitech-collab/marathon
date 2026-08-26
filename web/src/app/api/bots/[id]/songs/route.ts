@@ -5,6 +5,7 @@ import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { listLocalSongs } from "@/lib/local-song-catalog";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -89,15 +90,7 @@ export async function GET(_: Request, { params }: Params) {
 
     if (botError || !bot) throw new Error("Bot not found");
 
-    const { data, error } = await supabase
-      .from("songs")
-      .select("*")
-      .eq("bot_id", id)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    return NextResponse.json({ songs: data ?? [] });
+    return NextResponse.json({ songs: await listLocalSongs(id) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
   }

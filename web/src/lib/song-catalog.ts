@@ -1,7 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/db";
-
-type SongRow = Database["public"]["Tables"]["songs"]["Row"];
+import { listLocalSongs, type LocalSong } from "@/lib/local-song-catalog";
 
 function targetMood(contentTarget: string): string {
   switch (contentTarget) {
@@ -20,7 +17,7 @@ function targetMood(contentTarget: string): string {
   }
 }
 
-function pickWeightedSong(candidates: SongRow[]): SongRow | null {
+function pickWeightedSong(candidates: LocalSong[]): LocalSong | null {
   if (candidates.length === 0) return null;
 
   const total = candidates.reduce((sum, song) => sum + (song.weight > 0 ? song.weight : 1), 0);
@@ -36,44 +33,17 @@ function pickWeightedSong(candidates: SongRow[]): SongRow | null {
 }
 
 export async function pickSongForBot(
-  supabase: SupabaseClient<Database>,
   botId: string,
   contentTarget: string,
   options?: { excludeSongIds?: string[] },
-): Promise<SongRow | null> {
+): Promise<LocalSong | null> {
   const preferredMood = targetMood(contentTarget);
   const excluded = new Set((options?.excludeSongIds ?? []).filter(Boolean));
-
-  const { data: preferred, error: preferredError } = await supabase
-    .from("songs")
-    .select("*")
-    .eq("bot_id", botId)
-    .eq("is_active", true)
-    .eq("mood", preferredMood)
-    .limit(50);
-
-  if (preferredError) {
-    console.warn(`[${botId}] songs query failed for preferred mood '${preferredMood}': ${preferredError.message}`);
-  }
-
-  const preferredSongs = (preferred ?? []) as SongRow[];
+  const songs = await listLocalSongs(botId);
+  const preferredSongs = songs.filter((song) => song.mood === preferredMood);
   const preferredFiltered = preferredSongs.filter((song) => !excluded.has(song.id));
   const firstPick = pickWeightedSong(preferredFiltered);
   if (firstPick) return firstPick;
-
-  const { data: fallback, error: fallbackError } = await supabase
-    .from("songs")
-    .select("*")
-    .eq("bot_id", botId)
-    .eq("is_active", true)
-    .limit(100);
-
-  if (fallbackError) {
-    console.warn(`[${botId}] songs fallback query failed: ${fallbackError.message}`);
-    return null;
-  }
-
-  const fallbackSongs = (fallback ?? []) as SongRow[];
-  const fallbackFiltered = fallbackSongs.filter((song) => !excluded.has(song.id));
-  return pickWeightedSong(fallbackFiltered.length > 0 ? fallbackFiltered : fallbackSongs);
+  const fallbackFiltered = songs.filter((song) => !excluded.has(song.id));
+  return pickWeightedSong(fallbackFiltered.length > 0 ? fallbackFiltered : songs);
 }

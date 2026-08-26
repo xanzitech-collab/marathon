@@ -7,6 +7,7 @@ export interface CaptionInput {
   location?: string;
   mediaTags?: string[];
   sourceContext?: string | null; // title/description of the specific content item
+  platform?: "instagram" | "tiktok" | "facebook";
 }
 
 export interface VideoContextInput {
@@ -201,11 +202,18 @@ export class GeminiClient {
     const model = "gemini-flash-latest";
     const memeMode = input.contentTarget === "memes";
     const style = pickCaptionStyle(memeMode);
+    const platform = input.platform ?? "instagram";
+    const platformRule =
+      platform === "tiktok"
+        ? "TikTok rules: short, direct, native-to-TikTok phrasing. Use 3 to 6 relevant hashtags. You may use #fyp only when it actually fits. Never mention Instagram, Reels, or Facebook."
+        : platform === "facebook"
+          ? "Facebook rules: conversational and readable in a feed. Use 0 to 3 relevant hashtags. Never mention TikTok, FYP, Reels, or Instagram."
+          : "Instagram rules: write for an Instagram feed or Reel. Use 3 to 8 relevant hashtags. Never mention TikTok, FYP, or Facebook.";
 
     const prompt = [
       memeMode
-        ? "Create an Instagram caption for a meme post."
-        : `Create an Instagram caption for ${input.artist}.`,
+        ? `Create a ${platform} caption for a meme post.`
+        : `Create a ${platform} caption for ${input.artist}.`,
       `Persona: ${input.persona}.`,
       input.additionalPersona ? `Additional persona: ${input.additionalPersona}.` : "",
       input.location ? `Location context: ${input.location}.` : "",
@@ -228,6 +236,7 @@ export class GeminiClient {
       memeMode
         ? `Hashtag rules: ${style.hashtagRule} Only topical meme/reaction hashtags — never artist tags or promo tags.`
         : `Hashtag rules: ${style.hashtagRule} Mix artist tags with topical tags when you do use them.`,
+      platformRule,
       `Hard limit: max 2200 characters total.`,
     ]
       .filter(Boolean)

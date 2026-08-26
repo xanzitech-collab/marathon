@@ -95,6 +95,55 @@ export async function POST(request: Request, { params }: Params) {
   }
 }
 
+export async function PATCH(request: Request, { params }: Params) {
+  try {
+    const { id } = await params;
+    const { supabase, user } = await requireUser();
+    const body = await request.json() as { queueItemId?: unknown; caption?: unknown };
+    const queueItemId = typeof body.queueItemId === "string" ? body.queueItemId : "";
+    const caption = typeof body.caption === "string" ? body.caption.trim() : "";
+
+    if (!queueItemId || !caption || caption.length > 2200) {
+      return NextResponse.json({ error: "A caption between 1 and 2200 characters is required." }, { status: 400 });
+    }
+
+    const { data: bot, error: botError } = await supabase
+      .from("bots")
+      .select("id")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .single();
+    if (botError || !bot) throw new Error("Bot not found");
+
+    const { data: item, error: itemError } = await supabase
+      .from("content_queue")
+      .select("metadata,status")
+      .eq("id", queueItemId)
+      .eq("bot_id", id)
+      .single();
+    if (itemError || !item) throw new Error("Queue item not found");
+    if (item.status === "posted") {
+      return NextResponse.json({ error: "A published post cannot be edited here." }, { status: 400 });
+    }
+
+    const metadata = item.metadata && typeof item.metadata === "object" && !Array.isArray(item.metadata)
+      ? item.metadata as Record<string, unknown>
+      : {};
+    const { data, error } = await supabase
+      .from("content_queue")
+      .update({ generated_caption: caption, metadata: { ...metadata, caption_override: true } })
+      .eq("id", queueItemId)
+      .eq("bot_id", id)
+      .select("*")
+      .single();
+    if (error) throw error;
+
+    return NextResponse.json({ item: data });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
+  }
+}
+
 export async function DELETE(request: Request, { params }: Params) {
   try {
     const { id } = await params;

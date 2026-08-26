@@ -4,7 +4,7 @@ import { ContentDiscoveryService, type DiscoveryItem } from "@/lib/content-disco
 const ALLOWED_PLATFORMS = new Set(["tiktok", "facebook", "youtube", "twitter"]);
 
 function serializeItem(item: DiscoveryItem) {
-  return { url: item.url, title: item.title, description: item.description, tags: item.tags, source: item.source };
+  return { url: item.url, title: item.title, description: item.description, tags: item.tags, source: item.source, thumbnailUrl: item.thumbnailUrl };
 }
 
 export async function GET(request: Request) {

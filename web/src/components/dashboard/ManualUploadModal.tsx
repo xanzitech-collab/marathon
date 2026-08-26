@@ -20,6 +20,7 @@ interface VaultItem {
   mediaType: "image" | "video";
   originalFilename: string;
   contextText: string | null;
+  tags: string[];
   isPosted: boolean;
   previewUrl: string | null;
 }
@@ -30,6 +31,13 @@ interface LiveItem {
   description: string;
   tags: string[];
   source: string;
+  thumbnailUrl?: string;
+}
+
+interface HoverPreview {
+  item: LiveItem;
+  top: number;
+  left: number;
 }
 
 type Platform = "tiktok" | "facebook" | "youtube" | "twitter";
@@ -44,6 +52,7 @@ interface SelectedEntry {
   tags: string;
   songId: string | null;
   noSong: boolean;
+  soundtrackMix: number;
   tagAccount: boolean;
   captionLoading: boolean;
   vaultItemId?: string;
@@ -122,6 +131,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [hoverPreview, setHoverPreview] = useState<HoverPreview | null>(null);
 
   const [selected, setSelected] = useState<Map<string, SelectedEntry>>(new Map());
   const [songs, setSongs] = useState<Song[]>([]);
@@ -196,6 +206,12 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       if (result.ok) setSongs(result.data?.songs ?? []);
     })();
   }, [botId]);
+
+  useEffect(() => {
+    const dismissPreview = () => setHoverPreview(null);
+    window.addEventListener("scroll", dismissPreview, true);
+    return () => window.removeEventListener("scroll", dismissPreview, true);
+  }, []);
 
   const loadLivePlatform = async (nextPlatform: Platform) => {
     setPlatform(nextPlatform);
@@ -293,9 +309,10 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       previewUrl: item.previewUrl,
       mediaType: item.mediaType,
       caption: "",
-      tags: "",
+      tags: item.tags.join(", "),
       songId: null,
       noSong: true,
+      soundtrackMix: 100,
       tagAccount: false,
       captionLoading: true,
       vaultItemId: item.id,
@@ -303,25 +320,11 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     });
     setSelected(next);
 
-    if (!botId) return;
-    const result = await safeFetchJson<{ caption?: string; tags?: string[]; error?: string }>(
-      `/api/bots/${botId}/meme-vault-caption`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ vaultItemId: item.id }),
-      },
-    );
     setSelected((prev) => {
       const updated = new Map(prev);
       const existing = updated.get(key);
       if (!existing) return prev;
-      updated.set(key, {
-        ...existing,
-        caption: result.ok ? result.data?.caption ?? "" : "",
-        tags: result.ok ? (result.data?.tags ?? []).join(", ") : "",
-        captionLoading: false,
-      });
+      updated.set(key, { ...existing, captionLoading: false });
       return updated;
     });
   };
@@ -344,6 +347,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       tags: item.tags.join(", "),
       songId: null,
       noSong: true,
+      soundtrackMix: 100,
       tagAccount: false,
       captionLoading: true,
       sourceUrl: item.url,
@@ -433,6 +437,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
             tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
             songId: e.songId,
             noSong: e.noSong,
+            soundtrackMix: e.soundtrackMix,
             platforms: e.platforms,
           },
         ],
@@ -450,6 +455,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
             tags: e.tags.split(",").map((t) => t.trim()).filter(Boolean),
             songId: e.songId,
             noSong: e.noSong,
+            soundtrackMix: e.soundtrackMix,
             sourceUrl: e.sourceUrl,
             sourceLabel: e.sourceLabel,
             discoveryTitle: e.title,
@@ -659,6 +665,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                                 item={item}
                                 isSelected={selected.has(`live:${item.url}`)}
                                 onClick={() => void toggleSelectLive(item)}
+                                onPreview={setHoverPreview}
                               />
                             ))}
                           </div>
@@ -672,6 +679,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                       item={item}
                       isSelected={selected.has(`live:${item.url}`)}
                       onClick={() => void toggleSelectLive(item)}
+                      onPreview={setHoverPreview}
                     />
                   ))}
                 </div>
@@ -705,6 +713,11 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                   )}
                   {entry.kind === "live" && entry.captionLoading && !entry.resolveError && (
                     <p className="mt-1 text-[11px] text-ink-dim">Resolving real video from {entry.sourceLabel}…</p>
+                  )}
+                  {entry.mediaType === "video" && entry.previewUrl && !entry.captionLoading && (
+                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-black">
+                      <video src={entry.previewUrl} controls preload="metadata" className="aspect-[9/16] w-full" />
+                    </div>
                   )}
                   <textarea
                     value={entry.captionLoading ? "Generating caption…" : entry.caption}
@@ -769,6 +782,19 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                           : "Auto soundtrack"}
                     </span>
                   </div>
+                  {!entry.noSong && (
+                    <label className="mt-2 block text-[11px] text-ink-dim">
+                      Soundtrack mix: {entry.soundtrackMix}%
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={entry.soundtrackMix}
+                        onChange={(event) => updateSelected(entry.key, { soundtrackMix: Number(event.target.value) })}
+                        className="mt-1 w-full accent-signal"
+                      />
+                    </label>
+                  )}
                   <button
                     type="button"
                     onClick={() => updateSelected(entry.key, { tagAccount: !entry.tagAccount })}
@@ -831,22 +857,71 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
           </button>
         </div>
       </div>
+      {hoverPreview && <LiveHoverPreview preview={hoverPreview} onClose={() => setHoverPreview(null)} />}
     </div>
 
   );
 }
 
-function LiveItemButton({ item, isSelected, onClick }: { item: LiveItem; isSelected: boolean; onClick: () => void }) {
+function LiveItemButton({
+  item,
+  isSelected,
+  onClick,
+  onPreview,
+}: {
+  item: LiveItem;
+  isSelected: boolean;
+  onClick: () => void;
+  onPreview: (preview: HoverPreview | null) => void;
+}) {
   return (
     <button
       onClick={onClick}
+      onPointerEnter={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        onPreview({ item, top: Math.min(window.innerHeight - 340, rect.top), left: Math.min(window.innerWidth - 260, rect.right + 12) });
+      }}
+      onPointerLeave={() => onPreview(null)}
       className={`block w-full rounded-lg border p-3 text-left text-xs ${
         isSelected ? "border-signal ring-2 ring-signal/50" : "border-border"
       }`}
     >
-      <p className="truncate font-medium text-ink">{item.title}</p>
-      <p className="mt-1 truncate text-ink-dim">{item.description}</p>
-      <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-ink-dim">{item.source}</span>
+      <div className="flex gap-2">
+        {item.thumbnailUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.thumbnailUrl} alt="" className="h-12 w-9 shrink-0 rounded object-cover" />
+        )}
+        <div className="min-w-0">
+          <p className="truncate font-medium text-ink">{item.title}</p>
+          <p className="mt-1 truncate text-ink-dim">{item.description}</p>
+          <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-ink-dim">{item.source}</span>
+        </div>
+      </div>
     </button>
+  );
+}
+
+function LiveHoverPreview({ preview, onClose }: { preview: HoverPreview; onClose: () => void }) {
+  const tiktokId = preview.item.url.match(/tiktok\.com\/@[^/]+\/video\/(\d+)/i)?.[1];
+  return (
+    <aside
+      onPointerLeave={onClose}
+      style={{ top: preview.top, left: preview.left }}
+      className="fixed z-[60] w-60 overflow-hidden rounded-lg border border-border-strong bg-canvas shadow-2xl"
+    >
+      {tiktokId ? (
+        <iframe
+          src={`https://www.tiktok.com/player/v1/${tiktokId}?autoplay=1&music_info=0&description=0`}
+          title={preview.item.title}
+          className="aspect-[9/16] w-full border-0"
+          allow="autoplay; encrypted-media"
+        />
+      ) : preview.item.thumbnailUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={preview.item.thumbnailUrl} alt="" className="aspect-[9/16] w-full object-cover" />
+      ) : (
+        <div className="aspect-[9/16] bg-surface p-3 text-xs text-ink-dim">Preview unavailable</div>
+      )}
+    </aside>
   );
 }

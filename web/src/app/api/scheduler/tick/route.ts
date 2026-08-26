@@ -7,7 +7,7 @@ import { publishNextQueuedItem } from "@/lib/publish-service";
 import { tryAcquireAutomationLock, releaseAutomationLock } from "@/lib/automation-lock";
 import type { Database } from "@/types/db";
 
-export async function POST() {
+async function runSchedulerTick() {
   if (!tryAcquireAutomationLock()) {
     return NextResponse.json({ processed: 0, published: 0, skipped: true, reason: "Another automation cycle is already running" });
   }
@@ -29,6 +29,14 @@ export async function POST() {
     let published = 0;
 
     for (const bot of bots ?? []) {
+      const stalePublishingThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+      await supabase
+        .from("content_queue")
+        .update({ status: "queued", error_message: "Recovered after an interrupted publish attempt; retrying automatically." })
+        .eq("bot_id", bot.id)
+        .eq("status", "publishing")
+        .lt("updated_at", stalePublishingThreshold);
+
       const { data: windows } = await supabase.from("bot_posting_windows").select("*").eq("bot_id", bot.id);
       const postingWindows = windows && windows.length > 0 ? windows : await ensureDefaultPostingWindows(supabase, bot.id);
       const now = new Date();
@@ -104,4 +112,13 @@ export async function POST() {
   } finally {
     releaseAutomationLock();
   }
+}
+
+export async function POST(request: Request) {
+  const background = new URL(request.url).searchParams.get("background") === "1";
+  if (background) {
+    void runSchedulerTick();
+    return NextResponse.json({ accepted: true, message: "Automation started. The queue will update as work completes." }, { status: 202 });
+  }
+  return runSchedulerTick();
 }

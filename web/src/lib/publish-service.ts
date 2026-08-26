@@ -6,6 +6,7 @@ import { GeminiClient } from "@/lib/gemini/client";
 import { XenrioClient } from "@/lib/xenrio/client";
 import { getPostMediaUrl } from "@/lib/media";
 import { pickSongForBot } from "@/lib/song-catalog";
+import { findLocalSong } from "@/lib/local-song-catalog";
 import { renderMediaWithSoundtrack } from "@/lib/media-render";
 import { processVideoForPublish } from "@/lib/video-pipeline";
 import { prepareMemeImageForPublish } from "@/lib/meme-image";
@@ -407,6 +408,7 @@ export async function publishNextQueuedItem(
   // a human-approved caption — reuse it instead of the meme-path's normal
   // re-generate-every-time behavior.
   const isManualSelection = baseMetadata.manual_selection === true;
+  const hasCaptionOverride = baseMetadata.caption_override === true;
   // Belt-and-suspenders: some already-queued items had this internal debug
   // note baked into their saved caption from before it was fixed to never be
   // generated in the first place — since a reused caption is never
@@ -414,7 +416,7 @@ export async function publishNextQueuedItem(
   const stripLegacyReviewNote = (text: string) =>
     text.replace(/\n*Manual review recommended: low-confidence context\.\n*/g, "\n").trim();
   const reusableCaption =
-    !isMemePost || isManualSelection
+    !isMemePost || isManualSelection || hasCaptionOverride
       ? typeof item.generated_caption === "string" && item.generated_caption.trim()
         ? stripLegacyReviewNote(item.generated_caption)
         : null
@@ -438,6 +440,25 @@ export async function publishNextQueuedItem(
       mediaTags: tags,
       sourceContext,
     }));
+
+  const captionsByPlatform: Partial<Record<ConnectablePlatform, string>> = {};
+  if (!reusableCaption && !memeCaption) {
+    await Promise.all(
+      connectedTargets.map(async (target) => {
+        captionsByPlatform[target.platform] = await geminiClient.generateCaption({
+          artist: ARTIST_CONTEXT.name,
+          songs: ARTIST_CONTEXT.songs,
+          persona: bot.persona,
+          additionalPersona: bot.additional_persona,
+          contentTarget: bot.content_target,
+          location: [bot.city, bot.country].filter(Boolean).join(", "),
+          mediaTags: tags,
+          sourceContext,
+          platform: target.platform,
+        });
+      }),
+    );
+  }
 
   const contextCaption =
     mediaType === "video" && videoContextSummary
@@ -477,23 +498,29 @@ export async function publishNextQueuedItem(
   // the automatic mood/ratio-based picker.
   const manualSongId = typeof baseMetadata.manual_song_id === "string" ? baseMetadata.manual_song_id : null;
   const manualNoSong = baseMetadata.manual_no_song === true;
+  const manualSoundtrackMix = typeof baseMetadata.manual_soundtrack_mix === "number"
+    ? Math.max(0, Math.min(100, baseMetadata.manual_soundtrack_mix))
+    : 100;
 
   let selectedSong: Awaited<ReturnType<typeof pickSongForBot>> = null;
   if (manualNoSong) {
     selectedSong = null;
   } else if (manualSongId) {
-    const { data: manualSong } = await supabase.from("songs").select("*").eq("id", manualSongId).single();
-    selectedSong = manualSong ?? null;
+    selectedSong = await findLocalSong(id, manualSongId);
   } else if (shouldConsiderMusic) {
-    selectedSong = await pickSongForBot(supabase, id, bot.content_target, { excludeSongIds: recentSongIds });
+    selectedSong = await pickSongForBot(id, bot.content_target, { excludeSongIds: recentSongIds });
   }
-  const soundtrackLine = selectedSong
+  const soundtrackLine = selectedSong && (mediaType !== "video" || manualSoundtrackMix > 0)
     ? `Soundtrack: ${selectedSong.title} - ${selectedSong.artist ?? ARTIST_CONTEXT.name}`
     : null;
-  let finalCaption = [contextCaption, soundtrackLine, `@${ARTIST_CONTEXT.instagramHandle}`]
+  let finalCaption = [contextCaption, soundtrackLine]
     .filter(Boolean)
     .join("\n\n")
     .slice(0, 2200);
+
+  for (const [platform, platformCaption] of Object.entries(captionsByPlatform) as Array<[ConnectablePlatform, string]>) {
+    captionsByPlatform[platform] = [platformCaption, soundtrackLine].filter(Boolean).join("\n\n").slice(0, 2200);
+  }
 
 
   const recentCaptionSet = new Set(
@@ -532,32 +559,27 @@ export async function publishNextQueuedItem(
     video_needs_manual_review: videoManualReview,
     video_prepared_media_storage_path: processedVideoStoragePath,
     published_caption: finalCaption,
+    platform_captions: Object.keys(captionsByPlatform).length > 0 ? captionsByPlatform : null,
   };
 
   publishMediaUrl = processedVideoUrl ?? publishMediaUrl;
   publishMediaType = processedVideoUrl ? "video" : publishMediaType;
 
-  if (selectedSong && publishMediaUrl) {
-    const { data: songSigned, error: songSignedError } = await supabase.storage
-      .from("music")
-      .createSignedUrl(selectedSong.storage_path, 60 * 60);
-
-    if (songSignedError || !songSigned?.signedUrl) {
-      console.warn(`[${id}] Could not sign selected song URL: ${songSignedError?.message ?? "unknown error"}`);
-    } else {
-      const renderSourceType: "image" | "video" = mediaType === "video" ? "video" : "image";
-      try {
-        const rendered = await renderMediaWithSoundtrack({
-          supabase,
-          userId,
-          botId: id,
-          queueItemId: item.id,
-          sourceMediaUrl: publishMediaUrl,
-          sourceMediaType: renderSourceType,
-          songSignedUrl: songSigned.signedUrl,
-          songDurationSeconds: selectedSong.duration_seconds,
-          maxDurationSeconds: 20,
-        });
+  if (selectedSong && publishMediaUrl && (mediaType !== "video" || manualSoundtrackMix > 0)) {
+    const renderSourceType: "image" | "video" = mediaType === "video" ? "video" : "image";
+    try {
+      const rendered = await renderMediaWithSoundtrack({
+        supabase,
+        userId,
+        botId: id,
+        queueItemId: item.id,
+        sourceMediaUrl: publishMediaUrl,
+        sourceMediaType: renderSourceType,
+        songLocalPath: selectedSong.storage_path,
+        songDurationSeconds: selectedSong.duration_seconds,
+        soundtrackMix: manualSoundtrackMix,
+        maxDurationSeconds: 20,
+      });
 
         publishMediaUrl = rendered.signedUrl;
         publishMediaType = "video";
@@ -570,14 +592,13 @@ export async function publishNextQueuedItem(
             audio_duration_seconds: rendered.audioDurationSeconds,
           },
         };
-      } catch (renderError) {
-        const message = renderError instanceof Error ? renderError.message : "Unknown render error";
-        console.warn(`[${id}] Audio render skipped: ${message}`);
-        enrichedMetadata = {
-          ...enrichedMetadata,
-          rendered_media_error: message,
-        };
-      }
+    } catch (renderError) {
+      const message = renderError instanceof Error ? renderError.message : "Unknown render error";
+      console.warn(`[${id}] Audio render skipped: ${message}`);
+      enrichedMetadata = {
+        ...enrichedMetadata,
+        rendered_media_error: message,
+      };
     }
   }
 
@@ -602,6 +623,7 @@ export async function publishNextQueuedItem(
     const published = await xenrioClient.publish({
       targets: connectedTargets,
       caption: finalCaption,
+      captionsByPlatform: Object.keys(captionsByPlatform).length > 0 ? captionsByPlatform : undefined,
       surface: item.surface,
       mediaUrl: publishMediaUrl,
       mediaType: publishMediaType,

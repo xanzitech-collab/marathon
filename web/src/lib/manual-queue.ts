@@ -19,6 +19,7 @@ interface QueueAndPublishOptions {
   tags: string[];
   songId: string | null;
   noSong: boolean;
+  soundtrackMix: number;
   source: string;
   discoveryTitle?: string | null;
   discoveryDescription?: string | null;
@@ -57,6 +58,7 @@ export async function queueAndPublishManualItem(
         manual_selection: true,
         manual_song_id: options.noSong ? null : options.songId,
         manual_no_song: Boolean(options.noSong),
+        manual_soundtrack_mix: Math.max(0, Math.min(100, options.soundtrackMix)),
         ...options.extraMetadata,
       },
     })

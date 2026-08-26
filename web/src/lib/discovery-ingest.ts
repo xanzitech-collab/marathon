@@ -1,3 +1,5 @@
+import { promises as fs } from "node:fs";
+import path from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/db";
 import { ContentDiscoveryService } from "@/lib/content-discovery";
@@ -8,7 +10,6 @@ import { ARTIST_CONTEXT } from "@/lib/artist";
 import { buildFallbackMemePlan, verifyAndClassifyMemeCandidate, type MemeVerificationResult } from "@/lib/meme-verifier";
 import { renderJokeOntoImage, type RenderedMemeResult } from "@/lib/meme-canvas-render";
 import { extractVideoKeyframe, renderJokeOntoVideo } from "@/lib/meme-video-render";
-import { markVaultItemPosted } from "@/lib/meme-vault";
 import { getGeminiKeysForBot } from "@/lib/config";
 
 type BotRow = Database["public"]["Tables"]["bots"]["Row"];
@@ -18,6 +19,19 @@ export interface IngestResult {
   queued: number;
   skipped: number;
   debug: Array<Record<string, unknown>>;
+}
+
+function localMediaContentType(filePath: string): string {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".png": return "image/png";
+    case ".webp": return "image/webp";
+    case ".gif": return "image/gif";
+    case ".mp4": return "video/mp4";
+    case ".mov": return "video/quicktime";
+    case ".webm": return "video/webm";
+    case ".m4v": return "video/x-m4v";
+    default: return "image/jpeg";
+  }
 }
 
 /**
@@ -108,9 +122,12 @@ export async function discoverAndQueueContent(
     let mediaAssetId: string | null = null;
     let mediaUrl: string | null = null;
     let uploadedMediaType: "image" | "video" | null = null;
-    let resolvedFrom: "item" | "extracted" | null = null;
+    let resolvedFrom: "item" | "extracted" | "local" | null = null;
 
-    if (item.mediaUrl && (await validateMediaUrl(item.mediaUrl))) {
+    if (item.localMediaPath) {
+      mediaUrl = item.localMediaPath;
+      resolvedFrom = "local";
+    } else if (item.mediaUrl && (await validateMediaUrl(item.mediaUrl))) {
       mediaUrl = item.mediaUrl;
       resolvedFrom = "item";
     }
@@ -142,7 +159,7 @@ export async function discoverAndQueueContent(
     // a discovery source (the "item" resolution path, which skips
     // extractMediaFromUrl entirely) could still be a thumbnail despite
     // item.mediaType saying "video". Verify before trusting it.
-    if (item.mediaType === "video") {
+    if (item.mediaType === "video" && !item.localMediaPath) {
       try {
         const headRes = await fetch(mediaUrl, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(15_000) });
         const contentType = headRes.headers.get("content-type") || "";
@@ -173,16 +190,16 @@ export async function discoverAndQueueContent(
     const originMediaUrl = mediaUrl;
 
     try {
-      const response = await fetch(mediaUrl, { redirect: "follow", signal: AbortSignal.timeout(45_000) });
-      if (!response.ok) {
+      const response = item.localMediaPath ? null : await fetch(mediaUrl, { redirect: "follow", signal: AbortSignal.timeout(45_000) });
+      if (response && !response.ok) {
         skipped += 1;
         debug.push({ title: item.title, sourceUrl: item.url, mediaUrl, resolvedFrom, status: "skipped", reason: `media_fetch_failed:${response.status}` });
         console.warn(`[${id}] Media fetch failed for ${item.title}: ${response.status} ${response.statusText}`);
         continue;
       }
 
-      const contentType = response.headers.get("content-type") || "";
-      const contentLength = Number(response.headers.get("content-length") ?? 0);
+      const contentType = item.localMediaPath ? localMediaContentType(item.localMediaPath) : response?.headers.get("content-type") || "";
+      const contentLength = item.localMediaPath ? (await fs.stat(item.localMediaPath)).size : Number(response?.headers.get("content-length") ?? 0);
       // TikTok's CDN serves real video as application/octet-stream instead of
       // video/mp4 (confirmed live) — a large octet-stream is real media, a
       // tiny one is far more likely an error page.
@@ -213,7 +230,7 @@ export async function discoverAndQueueContent(
         continue;
       }
 
-      const buffer = Buffer.from(await response.arrayBuffer());
+      const buffer = item.localMediaPath ? await fs.readFile(item.localMediaPath) : Buffer.from(await response!.arrayBuffer());
       if (buffer.length === 0) {
         skipped += 1;
         debug.push({ title: item.title, sourceUrl: item.url, mediaUrl, resolvedFrom, status: "skipped", reason: "empty_media_payload" });
@@ -585,13 +602,6 @@ export async function discoverAndQueueContent(
     queued += 1;
     debug.push({ title: item.title, sourceUrl: item.url, mediaUrl, resolvedFrom, status: "queued", reason: "ok" });
 
-    if (item.vaultItemId) {
-      try {
-        await markVaultItemPosted(admin, item.vaultItemId);
-      } catch (vaultError) {
-        console.warn(`[${id}] Failed to mark vault item ${item.vaultItemId} as posted: ${vaultError instanceof Error ? vaultError.message : String(vaultError)}`);
-      }
-    }
   }
 
   return { discovered: items.length, queued, skipped, debug };

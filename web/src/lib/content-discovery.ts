@@ -1,5 +1,4 @@
 import { ARTIST_CONTEXT } from "@/lib/artist";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { pickMemeVaultItems } from "@/lib/meme-vault";
 import { extractTikTokProfileVideos, listRecentTweets } from "@/lib/discovery-media";
 
@@ -12,8 +11,9 @@ export interface DiscoveryItem {
   relevanceScore: number;
   tags: string[];
   mediaUrl?: string;
+  thumbnailUrl?: string;
+  localMediaPath?: string;
   contextHint?: string;
-  vaultItemId?: string;
 }
 
 interface BotRecord {
@@ -83,6 +83,11 @@ const TIKTOK_CURATED_FAN_HANDLES = [
   "love4infinity3",
   "lucidxi_reelz",
   "ghost986quotes",
+  "darknightbigg",
+  "only.mito1",
+  "swxft.404",
+  "tymekbanka",
+  "zyron.03",
 ];
 
 export class ContentDiscoveryService {
@@ -175,11 +180,9 @@ export class ContentDiscoveryService {
     }
 
     if (isMemeTarget) {
-      // Live crawling replaced by the curated local vault: 9gag/Kapwing are
-      // hand-downloaded and catalogued in Supabase instead of scraped at
-      // request time (see scripts/upload-meme-vault.mjs). Meme mode must
-      // never fall through to any of the crawl sources above.
-      sources.push(pickMemeVaultItems(createAdminClient(), options?.limit ?? 20));
+      // Meme mode reads only the local curated vault and never falls through
+      // to any crawl source above.
+      sources.push(pickMemeVaultItems(options?.limit ?? 20));
     }
 
     if (!isMemeTarget) {
@@ -501,6 +504,7 @@ export class ContentDiscoveryService {
         // content straight from their own page, not a random search hit.
         relevanceScore: isArtist ? 92 : 85,
         tags: isArtist ? ["fan_engagement", "fan", "tiktok", "official"] : ["fan_engagement", "fan", "tiktok"],
+        thumbnailUrl: video.thumbnailUrl,
       }));
     };
 

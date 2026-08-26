@@ -29,8 +29,9 @@ interface RenderInput {
   queueItemId: string;
   sourceMediaUrl: string;
   sourceMediaType: "image" | "video";
-  songSignedUrl: string;
+  songLocalPath: string;
   songDurationSeconds?: number | null;
+  soundtrackMix?: number;
   maxDurationSeconds?: number;
 }
 
@@ -242,7 +243,7 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
   try {
     await Promise.all([
       downloadToFile(input.sourceMediaUrl, mediaInputPath),
-      downloadToFile(input.songSignedUrl, audioInputPath),
+      fs.copyFile(input.songLocalPath, audioInputPath),
     ]);
 
     const maxDuration = Math.max(8, Math.min(60, input.maxDurationSeconds ?? 20));
@@ -280,6 +281,12 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
       input.sourceMediaType === "video"
         ? Math.min(maxDuration, Math.max(MIN_SOUNDTRACK_DURATION_SECONDS, sourceVideoDurationSeconds ?? maxDuration))
         : maxDuration;
+    const soundtrackGain = Math.max(0, Math.min(100, input.soundtrackMix ?? 100)) / 100;
+    const originalGain = 1 - soundtrackGain;
+    const audioFilter =
+      input.sourceMediaType === "video" && originalGain > 0
+        ? `;[0:a]volume=${originalGain}[original];[1:a]volume=${soundtrackGain}[soundtrack];[original][soundtrack]amix=inputs=2:duration=first:dropout_transition=0[outa]`
+        : `;[1:a]volume=${soundtrackGain}[outa]`;
 
     const ffmpegArgs =
       input.sourceMediaType === "image"
@@ -296,11 +303,11 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
             "-t",
             String(maxDuration),
             "-filter_complex",
-            videoFilterComplex,
+            `${videoFilterComplex}${audioFilter}`,
             "-map",
             "[outv]",
             "-map",
-            "1:a:0",
+            "[outa]",
             "-r",
             "30",
             "-c:v",
@@ -324,11 +331,11 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
             "-i",
             audioInputPath,
             "-filter_complex",
-            videoFilterComplex,
+            `${videoFilterComplex}${audioFilter}`,
             "-map",
             "[outv]",
             "-map",
-            "1:a:0",
+            "[outa]",
             "-t",
             String(targetDuration),
             "-c:v",
