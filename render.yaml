@@ -11,7 +11,7 @@ services:
     rootDir: web
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    healthCheckPath: /
+    healthCheckPath: /api/health
     envVars:
       - key: NEXT_PUBLIC_APP_URL
         sync: false

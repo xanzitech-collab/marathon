@@ -29,7 +29,7 @@ function paymentHoldResponse() {
 }
 
 export async function proxy(request: NextRequest) {
-  if (process.env.NODE_ENV === "production" && isPaymentHoldEnabled()) {
+  if (process.env.NODE_ENV === "production" && isPaymentHoldEnabled() && request.nextUrl.pathname !== "/api/health") {
     return paymentHoldResponse();
   }
 
@@ -41,8 +41,9 @@ export async function proxy(request: NextRequest) {
   const isSignin = path.startsWith("/signin");
   const isSignup = path.startsWith("/signup");
   const isAuthApi = path.startsWith("/api/auth/");
+  const isHealthCheck = path === "/api/health";
   const isDashboard = path.startsWith("/dashboard");
-  const isProtectedApi = path.startsWith("/api/") && !isAuthApi;
+  const isProtectedApi = path.startsWith("/api/") && !isAuthApi && !isHealthCheck;
 
   if (!isAuthenticated && (isDashboard || isProtectedApi)) {
     const url = request.nextUrl.clone();
