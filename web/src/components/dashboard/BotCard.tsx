@@ -118,13 +118,14 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   });
 
   const loadQueue = useCallback(async () => {
+    if (bot.is_demo || !expanded) return;
     const result = await safeFetchJson<{ queue?: QueueItem[]; error?: string }>(`/api/bots/${bot.id}/queue`, { cache: "no-store" });
     if (!result.ok) {
       setQueueActionMessage(result.error || "Couldn't load recent activity.");
       return;
     }
     setQueue(result.data?.queue ?? []);
-  }, [bot.id]);
+  }, [bot.id, bot.is_demo, expanded]);
 
   useEffect(() => {
     const SpeechRecognitionCtor = getSpeechRecognitionCtor();
@@ -152,6 +153,7 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
   }, []);
 
   useEffect(() => {
+    if (!expanded || bot.is_demo) return;
     let ignore = false;
     void (async () => {
       const result = await safeFetchJson<{ queue?: QueueItem[]; error?: string }>(`/api/bots/${bot.id}/queue`, { cache: "no-store" });
@@ -163,28 +165,13 @@ export function BotCard({ bot, onUpdated }: BotCardProps) {
       setQueue(result.data?.queue ?? []);
     })();
     return () => { ignore = true; };
-  }, [bot.id]);
+  }, [expanded, bot.id, bot.is_demo]);
 
   useEffect(() => {
-    if (!expanded) return;
-    let ignore = false;
-    void (async () => {
-      const result = await safeFetchJson<{ queue?: QueueItem[]; error?: string }>(`/api/bots/${bot.id}/queue`, { cache: "no-store" });
-      if (ignore) return;
-      if (!result.ok) {
-        setQueueActionMessage(result.error || "Couldn't load recent activity.");
-        return;
-      }
-      setQueue(result.data?.queue ?? []);
-    })();
-    return () => { ignore = true; };
-  }, [expanded, bot.id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || !expanded || bot.is_demo) return;
     const timer = window.setInterval(() => { void loadQueue(); }, 8000);
     return () => window.clearInterval(timer);
-  }, [loadQueue]);
+  }, [expanded, bot.is_demo, loadQueue]);
 
   const setupSteps = useMemo(
     () => [
