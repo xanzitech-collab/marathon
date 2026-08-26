@@ -88,6 +88,18 @@ const TIKTOK_CURATED_FAN_HANDLES = [
   "swxft.404",
   "tymekbanka",
   "zyron.03",
+  "w2rld.stan.account",
+  "dyinqwx",
+  "sydneyevelyn_",
+  "afrolinkzglobal",
+  "_danny_vibez",
+  "dancevibez26",
+  "megz.kudi_",
+  "kool_vibes6",
+  "its.dylbad",
+  "shamah_hhh",
+  "rainbowdj__",
+  "its_sandiego",
 ];
 
 export class ContentDiscoveryService {
