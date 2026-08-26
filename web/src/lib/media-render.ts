@@ -29,7 +29,7 @@ interface RenderInput {
   queueItemId: string;
   sourceMediaUrl: string;
   sourceMediaType: "image" | "video";
-  songLocalPath: string;
+  songStoragePath: string;
   songDurationSeconds?: number | null;
   soundtrackMix?: number;
   maxDurationSeconds?: number;
@@ -55,6 +55,19 @@ async function downloadToFile(url: string, filePath: string) {
   // first — this runs right alongside ffmpeg's own memory use, and buffering
   // full videos/audio in RAM is enough to OOM-kill a 512MB Render container.
   await pipeline(Readable.fromWeb(response.body as never), createWriteStream(filePath));
+}
+
+async function downloadStorageObject(
+  supabase: SupabaseClient<Database>,
+  bucket: string,
+  storagePath: string,
+  filePath: string,
+) {
+  const { data, error } = await supabase.storage.from(bucket).download(storagePath);
+  if (error || !data) {
+    throw new Error(`Soundtrack download failed: ${error?.message ?? "empty response"}`);
+  }
+  await fs.writeFile(filePath, Buffer.from(await data.arrayBuffer()));
 }
 
 function runFfmpeg(args: string[]) {
@@ -243,7 +256,7 @@ export async function renderMediaWithSoundtrack(input: RenderInput): Promise<Ren
   try {
     await Promise.all([
       downloadToFile(input.sourceMediaUrl, mediaInputPath),
-      fs.copyFile(input.songLocalPath, audioInputPath),
+      downloadStorageObject(input.supabase, process.env.SUPABASE_MUSIC_BUCKET ?? "music", input.songStoragePath, audioInputPath),
     ]);
 
     const maxDuration = Math.max(8, Math.min(60, input.maxDurationSeconds ?? 20));

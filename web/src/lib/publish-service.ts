@@ -5,8 +5,7 @@ import { getApiKeysBySlot, getGeminiKeysForBot } from "@/lib/config";
 import { GeminiClient } from "@/lib/gemini/client";
 import { XenrioClient } from "@/lib/xenrio/client";
 import { getPostMediaUrl } from "@/lib/media";
-import { pickSongForBot } from "@/lib/song-catalog";
-import { findLocalSong } from "@/lib/local-song-catalog";
+import { findSongForBot, pickSongForBot } from "@/lib/song-catalog";
 import { renderMediaWithSoundtrack } from "@/lib/media-render";
 import { processVideoForPublish } from "@/lib/video-pipeline";
 import { prepareMemeImageForPublish } from "@/lib/meme-image";
@@ -506,9 +505,9 @@ export async function publishNextQueuedItem(
   if (manualNoSong) {
     selectedSong = null;
   } else if (manualSongId) {
-    selectedSong = await findLocalSong(id, manualSongId);
+    selectedSong = await findSongForBot(supabase, id, manualSongId);
   } else if (shouldConsiderMusic) {
-    selectedSong = await pickSongForBot(id, bot.content_target, { excludeSongIds: recentSongIds });
+    selectedSong = await pickSongForBot(supabase, id, bot.content_target, { excludeSongIds: recentSongIds });
   }
   const soundtrackLine = selectedSong && (mediaType !== "video" || manualSoundtrackMix > 0)
     ? `Soundtrack: ${selectedSong.title} - ${selectedSong.artist ?? ARTIST_CONTEXT.name}`
@@ -575,7 +574,7 @@ export async function publishNextQueuedItem(
         queueItemId: item.id,
         sourceMediaUrl: publishMediaUrl,
         sourceMediaType: renderSourceType,
-        songLocalPath: selectedSong.storage_path,
+        songStoragePath: selectedSong.storage_path,
         songDurationSeconds: selectedSong.duration_seconds,
         soundtrackMix: manualSoundtrackMix,
         maxDurationSeconds: 20,

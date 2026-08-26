@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { listLocalSongs } from "@/lib/local-song-catalog";
+import { listSongsForBot } from "@/lib/song-catalog";
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -90,7 +90,7 @@ export async function GET(_: Request, { params }: Params) {
 
     if (botError || !bot) throw new Error("Bot not found");
 
-    return NextResponse.json({ songs: await listLocalSongs(id) });
+    return NextResponse.json({ songs: await listSongsForBot(supabase, id) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed" }, { status: 500 });
   }
