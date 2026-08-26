@@ -419,7 +419,7 @@ async function extractYtDlpVideoUrl(sourceUrl: string, options?: { extractorArgs
 export async function extractTikTokProfileVideos(
   handle: string,
   limit: number,
-): Promise<Array<{ id: string; url: string; title: string }>> {
+): Promise<Array<{ id: string; url: string; title: string; thumbnailUrl: string }>> {
   try {
     // TikTok intermittently withholds the id this needs from the profile
     // page ("Unable to extract secondary user ID") — confirmed flaky

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { promises as fs } from "node:fs";
+import type { Dirent } from "node:fs";
 import type { DiscoveryItem } from "@/lib/content-discovery";
 
 const VAULT_ROOT = path.join(process.cwd(), "public", "memes-content");
@@ -55,7 +56,7 @@ function tagsForFile(file: VaultFile): string[] {
 }
 
 async function readLocalVaultFiles(categories?: string[]): Promise<VaultFile[]> {
-  let directories: Awaited<ReturnType<typeof fs.readdir>>;
+  let directories: Dirent<string>[];
   try {
     directories = await fs.readdir(VAULT_ROOT, { withFileTypes: true });
   } catch {
