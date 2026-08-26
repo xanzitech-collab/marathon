@@ -77,7 +77,13 @@ function DashboardPageInner() {
         try {
           const event = JSON.parse(line) as { type?: string; bot?: BotWithHealth; botId?: string; externalPostCount?: number };
           if (event.type === "bot" && event.bot) {
-            startTransition(() => setBots((current) => [...current, event.bot!]));
+            startTransition(() => setBots((current) => {
+              const index = current.findIndex((bot) => bot.id === event.bot!.id);
+              if (index === -1) return [...current, event.bot!];
+              const updated = [...current];
+              updated[index] = event.bot!;
+              return updated;
+            }));
           }
           if (event.type === "count" && event.botId && typeof event.externalPostCount === "number") {
             startTransition(() => setBots((current) => current.map((bot) => (
