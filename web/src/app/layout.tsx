@@ -21,7 +21,7 @@ const data = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Crew24",
+  title: "Marathon Entertainment / Crew24",
   description: "Run every artist channel from one control room - connect, schedule, and monitor social accounts in one place.",
 };
 

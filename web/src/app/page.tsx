@@ -39,7 +39,7 @@ export default function Home() {
     <main className="flex min-h-screen flex-col bg-canvas text-ink">
       <header className="shell flex items-center justify-between py-6">
         <p className="font-data text-[11px] uppercase tracking-[0.2em] text-ink-dim">
-          Crew24
+          Marathon Entertainment / Crew24
         </p>
         <Link href="/signin" className="btn-secondary px-4 py-2 text-sm">
           Sign in
@@ -60,7 +60,7 @@ export default function Home() {
             Every channel, one console.
           </h1>
           <p className="mt-5 max-w-xl text-base text-ink-dim sm:text-lg">
-            Crew24 is the control room for artists and creators running social
+            Marathon Entertainment / Crew24 is the control room for artists and creators running social
             channels at scale - connect accounts, schedule posts, and see what&apos;s live without
             switching apps.
           </p>
@@ -85,7 +85,7 @@ export default function Home() {
       </section>
 
       <footer className="shell flex flex-col items-center justify-between gap-2 border-t border-border py-6 text-xs text-ink-faint sm:flex-row">
-        <p>© {new Date().getFullYear()} Crew24</p>
+        <p>© {new Date().getFullYear()} Marathon Entertainment / Crew24</p>
         <p className="font-data">Built for artist teams</p>
       </footer>
     </main>

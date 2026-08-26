@@ -208,8 +208,8 @@ function DashboardPageInner() {
       <header className="sticky top-0 z-20 border-b border-border bg-canvas/95 backdrop-blur">
         <div className="shell flex flex-wrap items-center justify-between gap-3 py-4">
           <div>
-            <p className="font-data text-[11px] uppercase tracking-[0.2em] text-ink-dim">Crew24</p>
-            <h1 className="font-display text-2xl text-ink sm:text-3xl">Studio</h1>
+            <p className="font-data text-[11px] uppercase tracking-[0.2em] text-ink-dim">Marathon Entertainment / Crew24</p>
+            <h1 className="font-display text-2xl text-ink sm:text-3xl">Top Racers</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

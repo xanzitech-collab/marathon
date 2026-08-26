@@ -45,7 +45,7 @@ export function AuthForm() {
   return (
     <form onSubmit={onSubmit} className="w-full max-w-md space-y-4 rounded-2xl border border-border bg-surface p-6">
       <h1 className="font-display text-2xl text-ink">Sign in</h1>
-      <p className="text-sm text-ink-dim">Crew24 Bot Control Center</p>
+      <p className="text-sm text-ink-dim">Marathon Entertainment / Crew24</p>
 
       <div>
         <label className="mb-1 block text-sm text-ink-dim">Username</label>
