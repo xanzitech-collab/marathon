@@ -2,6 +2,13 @@ import { type NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { LOCAL_AUTH_COOKIE, LOCAL_AUTH_TOKEN } from "@/lib/local-auth-constants";
 
+export const runtime = "nodejs";
+
+function isPaymentHoldEnabled(): boolean {
+  const paymentHoldKey = ["PAYMENT", "HOLD"].join("_");
+  return process.env[paymentHoldKey]?.trim().toLowerCase() === "true";
+}
+
 function paymentHoldResponse() {
   return new NextResponse(
     `<!doctype html>
@@ -24,7 +31,7 @@ function paymentHoldResponse() {
 }
 
 export async function proxy(request: NextRequest) {
-  if (process.env.NODE_ENV === "production" && process.env.PAYMENT_HOLD === "true") {
+  if (process.env.NODE_ENV === "production" && isPaymentHoldEnabled()) {
     return paymentHoldResponse();
   }
 
