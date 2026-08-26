@@ -69,18 +69,30 @@ function getDurationSeconds(filePath) {
 }
 
 async function resolveBotId(supabase, inputBotId, inputBotName) {
-  if (inputBotId) return inputBotId;
+  if (inputBotId) {
+    const { data, error } = await supabase
+      .from("bots")
+      .select("id")
+      .eq("id", inputBotId)
+      .eq("is_demo", false)
+      .maybeSingle();
+    if (!error && data?.id) return data.id;
+    throw new Error("BOT_ID must identify a real, non-demo bot.");
+  }
 
   if (inputBotName) {
-    const { data, error } = await supabase.from("bots").select("id,name").eq("name", inputBotName).limit(1).single();
+    const { data, error } = await supabase
+      .from("bots")
+      .select("id,name")
+      .eq("name", inputBotName)
+      .eq("is_demo", false)
+      .limit(1)
+      .single();
     if (!error && data?.id) return data.id;
+    throw new Error(`Could not find a real bot named '${inputBotName}'.`);
   }
 
-  const { data, error } = await supabase.from("bots").select("id,name").order("created_at", { ascending: false }).limit(1).single();
-  if (error || !data?.id) {
-    throw new Error("Could not resolve bot id. Set BOT_ID in env to continue.");
-  }
-  return data.id;
+  throw new Error("Set BOT_ID or BOT_NAME to a real, non-demo bot before uploading music.");
 }
 
 async function ensureMusicBucket(supabase, bucket) {
