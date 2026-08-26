@@ -32,6 +32,10 @@ export async function publishNextQueuedItem(
   const id = bot.id;
   const userId = bot.user_id;
 
+  if (bot.is_demo) {
+    return createPublishApiError("Demo bots cannot publish to connected platforms.", 403);
+  }
+
   // A crash mid-publish (e.g. the server OOM-killed) leaves an item claimed
   // as "publishing" forever — nothing else ever picks it back up since only
   // "queued"/"ready" items are eligible. Recover anything stuck for more

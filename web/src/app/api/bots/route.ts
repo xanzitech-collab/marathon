@@ -18,6 +18,22 @@ export async function GET() {
 
     if (error) throw error;
 
+    type ZernioAccount = Awaited<ReturnType<XenrioClient["listAccounts"]>>[number];
+    const accountsBySlot = new Map<number, Promise<ZernioAccount[] | null>>();
+    const getAccountsForSlot = (apiSlot: number) => {
+      const existing = accountsBySlot.get(apiSlot);
+      if (existing) return existing;
+
+      const request = new XenrioClient(getApiKeysBySlot(apiSlot).xenrio)
+        .listAccounts()
+        .catch((syncError) => {
+          console.warn(`[Xenrio slot ${apiSlot}] Could not fetch live post counts: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+          return null;
+        });
+      accountsBySlot.set(apiSlot, request);
+      return request;
+    };
+
     const bots = await Promise.all(
       (data ?? []).map(async (bot) => {
         const platformAccounts = await listPlatformAccounts(supabase, bot.id);
@@ -26,16 +42,13 @@ export async function GET() {
         // Best-effort: show the real live count from connected platforms (via
         // Zernio) instead of our own all-time queue history, which doesn't
         // know about posts the user deleted directly on the platform.
-        if (platformAccounts.length > 0) {
-          try {
-            const { xenrio } = getApiKeysBySlot(bot.api_slot);
-            const accounts = await new XenrioClient(xenrio).listAccounts();
+        if (!bot.is_demo && platformAccounts.length > 0) {
+          const accounts = await getAccountsForSlot(bot.api_slot);
+          if (accounts) {
             externalPostCount = platformAccounts.reduce((sum, platformAccount) => {
-              const account = accounts.find((a) => a.id === platformAccount.zernio_account_id);
+              const account = accounts.find((candidate) => candidate.id === platformAccount.zernio_account_id);
               return sum + (account?.externalPostCount ?? 0);
             }, 0);
-          } catch (syncError) {
-            console.warn(`[${bot.id}] Could not fetch live post count: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
           }
         }
 

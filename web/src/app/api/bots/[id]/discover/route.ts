@@ -32,6 +32,9 @@ export async function POST(request: Request, { params }: Params) {
     if (error || !bot) {
       return NextResponse.json({ error: "Bot not found" }, { status: 404 });
     }
+    if (bot.is_demo) {
+      return NextResponse.json({ error: "Demo bots cannot discover or queue live content." }, { status: 403 });
+    }
 
     const admin = createAdminClient();
 

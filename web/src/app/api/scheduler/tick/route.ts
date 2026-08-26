@@ -21,6 +21,7 @@ async function runSchedulerTick() {
       .from("bots")
       .select("*")
       .eq("is_active", true)
+      .eq("is_demo", false)
       .eq("connection_status", "connected");
 
     if (botError) throw botError;
