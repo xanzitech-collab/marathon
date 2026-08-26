@@ -4,7 +4,31 @@ import { AppError, requireUser } from "@/lib/auth";
 import { computeBotHealth } from "@/lib/bot-health";
 import { getApiKeysBySlot } from "@/lib/config";
 import { XenrioClient } from "@/lib/xenrio/client";
-import { listPlatformAccounts } from "@/lib/platform-accounts";
+import type { PlatformAccount } from "@/types/app";
+
+type ZernioAccount = Awaited<ReturnType<XenrioClient["listAccounts"]>>[number];
+
+const LIVE_COUNT_CACHE_MS = 60_000;
+const globalState = globalThis as typeof globalThis & {
+  __marathonZernioAccountsCache?: Map<number, { expiresAt: number; accounts: ZernioAccount[] | null }>;
+};
+const accountsBySlot = globalState.__marathonZernioAccountsCache ?? new Map<number, { expiresAt: number; accounts: ZernioAccount[] | null }>();
+globalState.__marathonZernioAccountsCache = accountsBySlot;
+
+async function getAccountsForSlot(apiSlot: number): Promise<ZernioAccount[] | null> {
+  const cached = accountsBySlot.get(apiSlot);
+  if (cached && cached.expiresAt > Date.now()) return cached.accounts;
+
+  try {
+    const accounts = await new XenrioClient(getApiKeysBySlot(apiSlot).xenrio).listAccounts();
+    accountsBySlot.set(apiSlot, { accounts, expiresAt: Date.now() + LIVE_COUNT_CACHE_MS });
+    return accounts;
+  } catch (syncError) {
+    console.warn(`[Xenrio slot ${apiSlot}] Could not fetch live post counts: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
+    accountsBySlot.set(apiSlot, { accounts: null, expiresAt: Date.now() + LIVE_COUNT_CACHE_MS });
+    return null;
+  }
+}
 
 export async function GET() {
   try {
@@ -18,45 +42,51 @@ export async function GET() {
 
     if (error) throw error;
 
-    type ZernioAccount = Awaited<ReturnType<XenrioClient["listAccounts"]>>[number];
-    const accountsBySlot = new Map<number, Promise<ZernioAccount[] | null>>();
-    const getAccountsForSlot = (apiSlot: number) => {
-      const existing = accountsBySlot.get(apiSlot);
-      if (existing) return existing;
+    const botRows = data ?? [];
+    const { data: platformAccountRows, error: platformAccountsError } = botRows.length === 0
+      ? { data: [], error: null }
+      : await supabase.from("bot_platform_accounts").select("*").in("bot_id", botRows.map((bot) => bot.id));
+    if (platformAccountsError) throw platformAccountsError;
 
-      const request = new XenrioClient(getApiKeysBySlot(apiSlot).xenrio)
-        .listAccounts()
-        .catch((syncError) => {
-          console.warn(`[Xenrio slot ${apiSlot}] Could not fetch live post counts: ${syncError instanceof Error ? syncError.message : String(syncError)}`);
-          return null;
+    const platformAccountsByBot = new Map<string, PlatformAccount[]>();
+    for (const account of platformAccountRows ?? []) {
+      const accounts = platformAccountsByBot.get(account.bot_id) ?? [];
+      accounts.push(account);
+      platformAccountsByBot.set(account.bot_id, accounts);
+    }
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const emit = (payload: unknown) => controller.enqueue(encoder.encode(`${JSON.stringify(payload)}\n`));
+        const bots = botRows.map((bot) => {
+          const platformAccounts = platformAccountsByBot.get(bot.id) ?? [];
+          return { ...bot, health: computeBotHealth(bot, platformAccounts), platformAccounts, externalPostCount: null };
         });
-      accountsBySlot.set(apiSlot, request);
-      return request;
-    };
 
-    const bots = await Promise.all(
-      (data ?? []).map(async (bot) => {
-        const platformAccounts = await listPlatformAccounts(supabase, bot.id);
-        let externalPostCount: number | null = null;
+        // Local database data is emitted immediately so the dashboard can
+        // paint cards without waiting on a third-party API.
+        for (const bot of bots) emit({ type: "bot", bot });
 
-        // Best-effort: show the real live count from connected platforms (via
-        // Zernio) instead of our own all-time queue history, which doesn't
-        // know about posts the user deleted directly on the platform.
-        if (!bot.is_demo && platformAccounts.length > 0) {
-          const accounts = await getAccountsForSlot(bot.api_slot);
-          if (accounts) {
-            externalPostCount = platformAccounts.reduce((sum, platformAccount) => {
+        const activeSlots = Array.from(new Set(bots.filter((bot) => !bot.is_demo && bot.platformAccounts.length > 0).map((bot) => bot.api_slot)));
+        await Promise.all(activeSlots.map(async (apiSlot) => {
+          const accounts = await getAccountsForSlot(apiSlot);
+          if (!accounts) return;
+          for (const bot of bots.filter((candidate) => candidate.api_slot === apiSlot && !candidate.is_demo)) {
+            const externalPostCount = bot.platformAccounts.reduce((sum: number, platformAccount: PlatformAccount) => {
               const account = accounts.find((candidate) => candidate.id === platformAccount.zernio_account_id);
               return sum + (account?.externalPostCount ?? 0);
             }, 0);
+            emit({ type: "count", botId: bot.id, externalPostCount });
           }
-        }
+        }));
 
-        return { ...bot, health: computeBotHealth(bot, platformAccounts), platformAccounts, externalPostCount };
-      }),
-    );
+        emit({ type: "done" });
+        controller.close();
+      },
+    });
 
-    return NextResponse.json({ bots });
+    return new NextResponse(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-store" } });
   } catch (error) {
     const status = error instanceof AppError ? error.status : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to load bots" }, { status });

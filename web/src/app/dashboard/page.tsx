@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Cookie, Settings, X, AtSign } from "lucide-react";
 import type { BotWithHealth } from "@/types/app";
@@ -52,13 +52,43 @@ function DashboardPageInner() {
 
   const fetchBots = async () => {
     const res = await fetch("/api/bots", { cache: "no-store" });
-    const data = await res.json();
-    if (!res.ok) {
-      setApiError(data.error ?? "Couldn't load your channels.");
+    if (!res.ok || !res.body) {
+      const data = await res.json().catch(() => null);
+      setApiError(data?.error ?? "Couldn't load your channels.");
       return;
     }
+
     setApiError(null);
-    setBots(data.bots ?? []);
+    setBots([]);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1) {
+        const line = buffer.slice(0, newlineIndex).trim();
+        buffer = buffer.slice(newlineIndex + 1);
+        newlineIndex = buffer.indexOf("\n");
+        if (!line) continue;
+        try {
+          const event = JSON.parse(line) as { type?: string; bot?: BotWithHealth; botId?: string; externalPostCount?: number };
+          if (event.type === "bot" && event.bot) {
+            startTransition(() => setBots((current) => [...current, event.bot!]));
+          }
+          if (event.type === "count" && event.botId && typeof event.externalPostCount === "number") {
+            startTransition(() => setBots((current) => current.map((bot) => (
+              bot.id === event.botId ? { ...bot, externalPostCount: event.externalPostCount } : bot
+            ))));
+          }
+        } catch {
+          // Ignore a malformed stream line and continue processing later bots.
+        }
+      }
+    }
   };
 
   const fetchCookiesStatus = async () => {
