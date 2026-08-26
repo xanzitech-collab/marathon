@@ -2,8 +2,6 @@ import { type NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { LOCAL_AUTH_COOKIE, LOCAL_AUTH_TOKEN } from "@/lib/local-auth-constants";
 
-export const runtime = "nodejs";
-
 function isPaymentHoldEnabled(): boolean {
   const paymentHoldKey = ["PAYMENT", "HOLD"].join("_");
   return process.env[paymentHoldKey]?.trim().toLowerCase() === "true";
