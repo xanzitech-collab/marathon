@@ -1,11 +1,17 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
+import { Bungee, Space_Grotesk, Inter, IBM_Plex_Mono } from "next/font/google";
 import { startAutomationLoop } from "@/lib/automation-loop";
 import "./globals.css";
 
 const display = Space_Grotesk({
   variable: "--font-display",
   weight: ["500", "600"],
+  subsets: ["latin"],
+});
+
+const racers = Bungee({
+  variable: "--font-racers",
+  weight: "400",
   subsets: ["latin"],
 });
 
@@ -29,7 +35,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   startAutomationLoop();
 
   return (
-    <html lang="en" className={`${display.variable} ${body.variable} ${data.variable} h-full antialiased`}>
+    <html lang="en" className={`${display.variable} ${racers.variable} ${body.variable} ${data.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col bg-canvas">{children}</body>
     </html>
   );

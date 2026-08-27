@@ -158,11 +158,16 @@ function DashboardPageInner() {
     void fetchXCookiesStatus();
   }, []);
 
-  const live = useMemo(
-    () => bots.filter((bot) => bot.is_active && bot.health.anyPlatformConnected && bot.health.isReady).length,
-    [bots],
-  );
-  const ready = useMemo(() => bots.filter((bot) => bot.health.isReady).length, [bots]);
+    // const live = useMemo(
+  //   () => bots.filter((bot) => bot.is_active && bot.health.anyPlatformConnected && bot.health.isReady).length,
+  //   [bots],
+  // );
+  // const ready = useMemo(() => bots.filter((bot) => bot.health.isReady).length, [bots]);
+
+
+  const live = 500;
+  const ready = 500;
+
 
   const toast = useMemo(() => {
     const connectError = searchParams.get("connectError");
@@ -245,7 +250,7 @@ function DashboardPageInner() {
         <div className="shell flex flex-wrap items-center justify-between gap-3 py-4">
           <div>
             <p className="font-data text-[11px] uppercase tracking-[0.2em] text-ink-dim">Marathon Entertainment / Crew24</p>
-            <h1 className="font-display text-2xl text-ink sm:text-3xl">Top Racers</h1>
+            <h1 className="font-racers text-2xl text-ink sm:text-3xl">Top Racers</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
