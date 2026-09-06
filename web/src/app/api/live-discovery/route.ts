@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { hasLocalSession } from "@/lib/local-auth";
 import { ContentDiscoveryService, type DiscoveryItem } from "@/lib/content-discovery";
 
 const ALLOWED_PLATFORMS = new Set(["tiktok", "facebook", "youtube", "twitter"]);
@@ -8,10 +8,8 @@ function serializeItem(item: DiscoveryItem) {
 }
 
 export async function GET(request: Request) {
-  try {
-    await requireUser();
-  } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Unauthorized" }, { status: 401 });
+  if (!(await hasLocalSession())) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);

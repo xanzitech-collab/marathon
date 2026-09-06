@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { X, ChevronDown, ChevronRight, Music, Trash2, Radio, CheckCircle2, Video, Image as ImageIcon } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Music, Trash2, Radio, CheckCircle2, Video, Image as ImageIcon, Download } from "lucide-react";
 import type { BotWithHealth, ConnectablePlatform, Song } from "@/types/app";
 import { safeFetchJson } from "@/lib/safe-fetch";
 
@@ -715,8 +715,19 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                     <p className="mt-1 text-[11px] text-ink-dim">Resolving real video from {entry.sourceLabel}…</p>
                   )}
                   {entry.mediaType === "video" && entry.previewUrl && !entry.captionLoading && (
-                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-black">
-                      <video src={entry.previewUrl} controls preload="metadata" className="aspect-[9/16] w-full" />
+                    <div className="mt-2">
+                      <div className="overflow-hidden rounded-lg border border-border bg-black">
+                        <video src={entry.previewUrl} controls preload="metadata" className="aspect-[9/16] w-full" />
+                      </div>
+                      {entry.mediaAssetId && (
+                        <a
+                          href={`/api/bots/${botId}/media/${entry.mediaAssetId}/download`}
+                          className="btn-secondary mt-2 inline-flex items-center gap-1.5 px-2 py-1 text-[11px]"
+                        >
+                          <Download size={13} />
+                          Download video
+                        </a>
+                      )}
                     </div>
                   )}
                   <textarea
@@ -875,18 +886,17 @@ function LiveItemButton({
   onPreview: (preview: HoverPreview | null) => void;
 }) {
   return (
-    <button
-      onClick={onClick}
+    <div
       onPointerEnter={(event) => {
         const rect = event.currentTarget.getBoundingClientRect();
         onPreview({ item, top: Math.min(window.innerHeight - 340, rect.top), left: Math.min(window.innerWidth - 260, rect.right + 12) });
       }}
       onPointerLeave={() => onPreview(null)}
-      className={`block w-full rounded-lg border p-3 text-left text-xs ${
+      className={`flex w-full items-start gap-2 rounded-lg border p-3 text-left text-xs ${
         isSelected ? "border-signal ring-2 ring-signal/50" : "border-border"
       }`}
     >
-      <div className="flex gap-2">
+      <button type="button" onClick={onClick} className="flex min-w-0 flex-1 gap-2 text-left">
         {item.thumbnailUrl && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={item.thumbnailUrl} alt="" className="h-12 w-9 shrink-0 rounded object-cover" />
@@ -896,8 +906,16 @@ function LiveItemButton({
           <p className="mt-1 truncate text-ink-dim">{item.description}</p>
           <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-ink-dim">{item.source}</span>
         </div>
-      </div>
-    </button>
+      </button>
+      <a
+        href={`/api/live-download?url=${encodeURIComponent(item.url)}`}
+        title="Download video"
+        aria-label={`Download ${item.title}`}
+        className="btn-icon shrink-0"
+      >
+        <Download size={15} />
+      </a>
+    </div>
   );
 }
 
