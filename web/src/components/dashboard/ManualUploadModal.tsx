@@ -130,6 +130,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [hoverPreview, setHoverPreview] = useState<HoverPreview | null>(null);
 
@@ -268,6 +269,33 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     setTab("live");
     if (liveItems.length === 0 && !liveLoading && !liveError) {
       void loadLivePlatform(platform);
+    }
+  };
+
+  const downloadLiveVideo = async (item: LiveItem) => {
+    setDownloadingUrl(item.url);
+    setLiveError(null);
+
+    try {
+      const response = await fetch(`/api/live-download?url=${encodeURIComponent(item.url)}`);
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error || "Could not download this video.");
+      }
+
+      const video = await response.blob();
+      const downloadUrl = URL.createObjectURL(video);
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = "marathon-live-video.mp4";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(downloadUrl);
+    } catch (downloadError) {
+      setLiveError(downloadError instanceof Error ? downloadError.message : "Could not download this video.");
+    } finally {
+      setDownloadingUrl(null);
     }
   };
 
@@ -665,6 +693,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                                 item={item}
                                 isSelected={selected.has(`live:${item.url}`)}
                                 onClick={() => void toggleSelectLive(item)}
+                                onDownload={() => void downloadLiveVideo(item)}
+                                downloading={downloadingUrl === item.url}
                                 onPreview={setHoverPreview}
                               />
                             ))}
@@ -679,6 +709,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                       item={item}
                       isSelected={selected.has(`live:${item.url}`)}
                       onClick={() => void toggleSelectLive(item)}
+                      onDownload={() => void downloadLiveVideo(item)}
+                      downloading={downloadingUrl === item.url}
                       onPreview={setHoverPreview}
                     />
                   ))}
@@ -878,11 +910,15 @@ function LiveItemButton({
   item,
   isSelected,
   onClick,
+  onDownload,
+  downloading,
   onPreview,
 }: {
   item: LiveItem;
   isSelected: boolean;
   onClick: () => void;
+  onDownload: () => void;
+  downloading: boolean;
   onPreview: (preview: HoverPreview | null) => void;
 }) {
   return (
@@ -907,14 +943,16 @@ function LiveItemButton({
           <span className="mt-1 inline-block rounded-full bg-canvas px-2 py-0.5 text-[10px] text-ink-dim">{item.source}</span>
         </div>
       </button>
-      <a
-        href={`/api/live-download?url=${encodeURIComponent(item.url)}`}
+      <button
+        type="button"
+        onClick={onDownload}
+        disabled={downloading}
         title="Download video"
         aria-label={`Download ${item.title}`}
-        className="btn-icon shrink-0"
+        className="btn-icon shrink-0 disabled:cursor-wait disabled:opacity-60"
       >
         <Download size={15} />
-      </a>
+      </button>
     </div>
   );
 }
