@@ -109,6 +109,12 @@ const TIKTOK_CURATED_FAN_HANDLES = [
   "simoneasantee",
   "mia_bakliss",
   "prettyandmysterious_",
+  "reni.yah",
+  "ssssofiqq",
+  "pinenut_blend",
+  "user33329282877282828292",
+  "_adoreeashley",
+  "mellissa_khumalo",
 ];
 
 export class ContentDiscoveryService {
