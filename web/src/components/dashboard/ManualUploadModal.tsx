@@ -40,6 +40,12 @@ interface HoverPreview {
   left: number;
 }
 
+interface DownloadProgress {
+  done: number;
+  total: number;
+  failed: number;
+}
+
 type Platform = "tiktok" | "facebook" | "youtube" | "twitter";
 
 interface SelectedEntry {
@@ -130,7 +136,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
   const [liveItems, setLiveItems] = useState<LiveItem[]>([]);
   const [liveLoading, setLiveLoading] = useState(false);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
+  const [downloadingUrls, setDownloadingUrls] = useState<Set<string>>(new Set());
+  const [accountDownloadProgress, setAccountDownloadProgress] = useState<Map<string, DownloadProgress>>(new Map());
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [hoverPreview, setHoverPreview] = useState<HoverPreview | null>(null);
 
@@ -272,9 +279,8 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
     }
   };
 
-  const downloadLiveVideo = async (item: LiveItem) => {
-    setDownloadingUrl(item.url);
-    setLiveError(null);
+  const downloadLiveVideo = async (item: LiveItem): Promise<boolean> => {
+    setDownloadingUrls((current) => new Set(current).add(item.url));
 
     try {
       const response = await fetch(`/api/live-download?url=${encodeURIComponent(item.url)}`);
@@ -287,16 +293,45 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
       const downloadUrl = URL.createObjectURL(video);
       const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = "marathon-live-video.mp4";
+      link.download = `marathon-${item.url.match(/video\/(\d+)/)?.[1] ?? "live-video"}.mp4`;
       document.body.appendChild(link);
       link.click();
       link.remove();
-      URL.revokeObjectURL(downloadUrl);
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1_000);
+      return true;
     } catch (downloadError) {
       setLiveError(downloadError instanceof Error ? downloadError.message : "Could not download this video.");
+      return false;
     } finally {
-      setDownloadingUrl(null);
+      setDownloadingUrls((current) => {
+        const next = new Set(current);
+        next.delete(item.url);
+        return next;
+      });
     }
+  };
+
+  const downloadAccountVideos = async (handle: string, items: LiveItem[]) => {
+    if (accountDownloadProgress.has(handle)) return;
+
+    setLiveError(null);
+    setAccountDownloadProgress((current) => new Map(current).set(handle, { done: 0, total: items.length, failed: 0 }));
+    let failed = 0;
+
+    for (let index = 0; index < items.length; index += 1) {
+      const downloaded = await downloadLiveVideo(items[index]);
+      if (!downloaded) failed += 1;
+      const done = index + 1;
+      setAccountDownloadProgress((current) => new Map(current).set(handle, { done, total: items.length, failed }));
+    }
+
+    window.setTimeout(() => {
+      setAccountDownloadProgress((current) => {
+        const next = new Map(current);
+        next.delete(handle);
+        return next;
+      });
+    }, 5_000);
   };
 
   const toggleCategory = async (category: string) => {
@@ -673,18 +708,35 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                 <div className="space-y-2">
                   {liveGroups.map((group) => {
                     const isCollapsed = collapsedGroups.has(group.handle);
+                    const downloadProgress = accountDownloadProgress.get(group.handle);
                     return (
                       <div key={group.handle} className="rounded-lg border border-border">
-                        <button
-                          onClick={() => toggleGroupCollapsed(group.handle)}
-                          className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm text-ink"
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
+                        <div className="flex w-full items-center justify-between gap-2 px-3 py-2 text-sm text-ink">
+                          <button
+                            type="button"
+                            onClick={() => toggleGroupCollapsed(group.handle)}
+                            className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                          >
                             {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
                             <span className="truncate">@{group.handle}</span>
-                          </span>
+                          </button>
                           <span className="shrink-0 font-data text-[11px] text-ink-dim">{group.items.length} videos</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => void downloadAccountVideos(group.handle, group.items)}
+                            disabled={Boolean(downloadProgress)}
+                            title={`Download all videos from @${group.handle}`}
+                            aria-label={`Download all videos from @${group.handle}`}
+                            className="btn-icon shrink-0 disabled:cursor-wait disabled:opacity-60"
+                          >
+                            <Download size={15} />
+                          </button>
+                        </div>
+                        {downloadProgress && (
+                          <p className="border-t border-border px-3 py-1.5 text-[11px] text-ink-dim">
+                            Downloading {downloadProgress.done}/{downloadProgress.total}{downloadProgress.failed > 0 ? ` (${downloadProgress.failed} skipped)` : ""}
+                          </p>
+                        )}
                         {!isCollapsed && (
                           <div className="space-y-2 border-t border-border p-2">
                             {group.items.map((item) => (
@@ -694,7 +746,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                                 isSelected={selected.has(`live:${item.url}`)}
                                 onClick={() => void toggleSelectLive(item)}
                                 onDownload={() => void downloadLiveVideo(item)}
-                                downloading={downloadingUrl === item.url}
+                                downloading={downloadingUrls.has(item.url)}
                                 onPreview={setHoverPreview}
                               />
                             ))}
@@ -710,7 +762,7 @@ export function ManualUploadModal({ bots, onClose }: ManualUploadModalProps) {
                       isSelected={selected.has(`live:${item.url}`)}
                       onClick={() => void toggleSelectLive(item)}
                       onDownload={() => void downloadLiveVideo(item)}
-                      downloading={downloadingUrl === item.url}
+                      downloading={downloadingUrls.has(item.url)}
                       onPreview={setHoverPreview}
                     />
                   ))}
