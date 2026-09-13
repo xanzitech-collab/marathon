@@ -115,6 +115,16 @@ const TIKTOK_CURATED_FAN_HANDLES = [
   "user33329282877282828292",
   "_adoreeashley",
   "mellissa_khumalo",
+  "mbali_mvula",
+  "iloveremo_",
+  "tendai.masuta",
+  "ladyblokzfd",
+  "jadeso.xo",
+  "somanyprettygirls",
+  "alydabest",
+  "kendals_imaginary",
+  "dianaslavinskaite",
+  "damnthatsbriii",
 ];
 
 export class ContentDiscoveryService {
